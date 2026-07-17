@@ -623,7 +623,7 @@ export default function SocialHub({
               {/* Discover Users list */}
               <div className="space-y-4">
                 <h3 className="text-xs font-mono font-black text-zinc-400 uppercase tracking-wider">
-                  🔍 ALL REGISTERED USERS & LOGINS
+                  🔍 SENDING FRIEND REQUEST LIST
                 </h3>
 
                 {/* Search query box */}
@@ -685,7 +685,7 @@ export default function SocialHub({
                                 }`}
                               >
                                 <UserPlus className="w-3.5 h-3.5" />
-                                Add Selected ({selectedDiscoverIds.length})
+                                Send Selected Request ({selectedDiscoverIds.length})
                               </button>
                             </div>
                           )}
@@ -785,7 +785,7 @@ export default function SocialHub({
                                       }}
                                       className="flex items-center gap-1 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-800 text-[9px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer shrink-0"
                                     >
-                                      <UserPlus className="w-3 h-3" /> Add Friend
+                                      <UserPlus className="w-3 h-3" /> Send Friend Request
                                     </button>
                                   )}
                                 </div>

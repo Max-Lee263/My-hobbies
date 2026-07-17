@@ -1,7 +1,7 @@
 import React, { useState, FormEvent, useEffect } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { User } from "../types";
-import { KeyRound, Mail, Phone, School, Sparkles, UserPlus, LogIn, Heart } from "lucide-react";
+import { KeyRound, Mail, Phone, School, Sparkles, UserPlus, LogIn, Heart, Check, Plus, ChevronDown, ChevronUp, Award, BookOpen } from "lucide-react";
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
@@ -27,6 +27,36 @@ const DEMO_ACCOUNTS: Omit<User, "password">[] = [
   },
 ];
 
+const PREDEFINED_SUBJECTS: Record<string, string[]> = {
+  "Physics": [
+    "Mechanics", "Thermodynamics", "Optics", "Electromagnetism", "Nuclear Physics",
+    "Physics Mock Test - Part 1", "Physics Mock Test - Part 2", "Physics Mock Test - Part 3", "Physics Mock Test - Part 4"
+  ],
+  "Chemistry": [
+    "Organic Chemistry", "Inorganic Chemistry", "Physical Chemistry", "Biochemistry", "Electrochemistry",
+    "Chemistry Mock Test - Part 1", "Chemistry Mock Test - Part 2", "Chemistry Mock Test - Part 3", "Chemistry Mock Test - Part 4"
+  ],
+  "Mathematics": [
+    "Algebra & Calculus", "Geometry & Vectors", "Probability & Statistics", "Trigonometry", "Linear Algebra",
+    "Mathematics Mock Test - Part 1", "Mathematics Mock Test - Part 2", "Mathematics Mock Test - Part 3", "Mathematics Mock Test - Part 4"
+  ],
+  "Biology": [
+    "Cell Biology", "Genetics & Evolution", "Human Physiology", "Plant Anatomy", "Ecology",
+    "Biology Mock Test - Part 1", "Biology Mock Test - Part 2", "Biology Mock Test - Part 3", "Biology Mock Test - Part 4"
+  ],
+  "Computer Science": [
+    "Data Structures & Algorithms", "Web Development", "Database Systems", "Machine Learning", "Operating Systems",
+    "Computer Science Mock Test - Part 1", "Computer Science Mock Test - Part 2", "Computer Science Mock Test - Part 3", "Computer Science Mock Test - Part 4"
+  ],
+  "English": [
+    "Grammar & Syntax", "Reading Comprehension", "Creative Writing", "Vocabulary & Idioms", "Literature Review",
+    "English Mock Test - Part 1", "English Mock Test - Part 2", "English Mock Test - Part 3", "English Mock Test - Part 4"
+  ],
+  "General Hobbies": [
+    "Yoga & Meditation", "Daily Fitness & Workout", "Creative Writing", "Book Reading", "Digital Art & Painting", "Competitive Gaming"
+  ]
+};
+
 export default function AuthScreen({ onLogin }: AuthScreenProps) {
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [loginMethod, setLoginMethod] = useState<"email" | "mobile">("email");
@@ -43,6 +73,8 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
   const [regHobbies, setRegHobbies] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regError, setRegError] = useState("");
+  const [showQuickSelect, setShowQuickSelect] = useState(false);
+  const [activeRegSubject, setActiveRegSubject] = useState("Physics");
 
   // Sync existing local accounts to server database on mount
   useEffect(() => {
@@ -422,11 +454,45 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
             </div>
 
             {/* Personal Hobbies / Habits type */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em] flex items-center gap-1.5">
-                <Heart className="w-3.5 h-3.5" />
-                <span>Personal Hobbies / Habit Focus</span>
-              </label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em] flex items-center gap-1.5">
+                  <Heart className="w-3.5 h-3.5" />
+                  <span>Personal Hobbies / Habit Focus</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowQuickSelect(!showQuickSelect)}
+                  className="text-[10px] font-mono font-bold text-orange-400 hover:text-orange-300 flex items-center gap-1 bg-zinc-900 px-2.5 py-1 border border-zinc-800 transition-colors cursor-pointer"
+                >
+                  <Award className="w-3 h-3 text-orange-500" />
+                  <span>{showQuickSelect ? "Hide Subjects" : "Quick Select Subjects"}</span>
+                  {showQuickSelect ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+              </div>
+
+              {/* Tag Badges for already selected */}
+              {regHobbies.trim() && (
+                <div className="flex flex-wrap gap-1 p-2 bg-zinc-900/40 border border-zinc-900 rounded-none">
+                  {regHobbies.split(",").map(h => h.trim()).filter(Boolean).map(hobby => (
+                    <span key={hobby} className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 bg-zinc-900 border border-zinc-800 text-zinc-300">
+                      <span>{hobby}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentList = regHobbies.split(",").map(x => x.trim()).filter(Boolean);
+                          const newList = currentList.filter(x => x !== hobby);
+                          setRegHobbies(newList.join(", "));
+                        }}
+                        className="text-zinc-500 hover:text-red-500 font-bold ml-1 cursor-pointer text-[10px]"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
               <input
                 type="text"
                 placeholder="e.g. Sports, Yoga, Math Drills, Coding, Meditation"
@@ -434,6 +500,76 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
                 onChange={(e) => setRegHobbies(e.target.value)}
                 className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
               />
+
+              {/* Predefined Quick Select Panel */}
+              <AnimatePresence>
+                {showQuickSelect && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden border border-zinc-850 bg-zinc-950 p-3 space-y-3"
+                  >
+                    {/* Subject Row Tabs */}
+                    <div className="flex gap-1 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-zinc-800">
+                      {Object.keys(PREDEFINED_SUBJECTS).map((subject) => {
+                        const isSubjectActive = activeRegSubject === subject;
+                        return (
+                          <button
+                            key={subject}
+                            type="button"
+                            onClick={() => setActiveRegSubject(subject)}
+                            className={`px-2.5 py-1 text-[9px] font-mono font-bold uppercase tracking-wider shrink-0 border transition-all cursor-pointer ${
+                              isSubjectActive
+                                ? "bg-orange-500 text-black border-orange-500 font-extrabold"
+                                : "bg-zinc-900 text-zinc-400 hover:text-white border-zinc-850"
+                            }`}
+                          >
+                            {subject}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Active subject's topics list */}
+                    <div className="grid grid-cols-2 gap-1 max-h-[140px] overflow-y-auto pr-1">
+                      {PREDEFINED_SUBJECTS[activeRegSubject].map((topic) => {
+                        const currentList = regHobbies.split(",").map(x => x.trim()).filter(Boolean);
+                        const isSelected = currentList.some(x => x.toLowerCase() === topic.toLowerCase());
+
+                        return (
+                          <button
+                            key={topic}
+                            type="button"
+                            onClick={() => {
+                              const list = regHobbies.split(",").map(x => x.trim()).filter(Boolean);
+                              if (list.some(x => x.toLowerCase() === topic.toLowerCase())) {
+                                // Remove
+                                const updated = list.filter(x => x.toLowerCase() !== topic.toLowerCase());
+                                setRegHobbies(updated.join(", "));
+                              } else {
+                                // Add
+                                list.push(topic);
+                                setRegHobbies(list.join(", "));
+                              }
+                            }}
+                            className={`p-1.5 text-left text-[10px] border flex items-center justify-between transition-all cursor-pointer ${
+                              isSelected
+                                ? "bg-orange-500/10 border-orange-500 text-orange-400"
+                                : "bg-zinc-900 border-zinc-850 hover:bg-zinc-800 text-zinc-300"
+                            }`}
+                          >
+                            <span className="truncate pr-1">{topic}</span>
+                            <span className="shrink-0 text-[10px]">
+                              {isSelected ? <Check className="w-3 h-3 text-orange-400 stroke-[3]" /> : <Plus className="w-3 h-3 text-zinc-600" />}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Password */}

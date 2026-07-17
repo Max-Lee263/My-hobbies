@@ -36,6 +36,7 @@ import AuthScreen from "./components/AuthScreen";
 import SocialHub from "./components/SocialHub";
 import PrintHabitsModal from "./components/PrintHabitsModal";
 import AIPromptWidget from "./components/AIPromptWidget";
+import HobbiesModal from "./components/HobbiesModal";
 
 export default function App() {
   // --- USER AUTHENTICATION STATE ---
@@ -103,6 +104,7 @@ export default function App() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isHobbiesModalOpen, setIsHobbiesModalOpen] = useState(false);
   const [habitToEdit, setHabitToEdit] = useState<Habit | null>(null);
   
   // Navigation / Workspace tab state
@@ -618,11 +620,77 @@ export default function App() {
               <h2 className="text-xl font-black text-white uppercase tracking-tight font-sans">
                 {currentUser.name}
               </h2>
-              {currentUser.hobbies && (
-                <p className="text-xs text-zinc-400 font-mono flex items-center gap-1.5">
-                  <span className="text-orange-500">Focus:</span> {currentUser.hobbies}
-                </p>
-              )}
+              {/* Interactive focus hobbies list & selector */}
+              <div className="pt-1.5 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 font-mono uppercase tracking-wider">
+                  <span className="text-orange-500 font-black">Focus Hobbies & Subjects:</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 items-center">
+                  {currentUser.hobbies ? (
+                    currentUser.hobbies
+                      .split(",")
+                      .map(h => h.trim())
+                      .filter(Boolean)
+                      .map((hobby) => {
+                        const isMock = hobby.includes("Mock Test");
+                        return (
+                          <span
+                            key={hobby}
+                            className={`inline-flex items-center gap-1.5 text-[10px] font-mono font-bold px-2 py-1 border transition-colors ${
+                              isMock
+                                ? "bg-orange-500/10 text-orange-400 border-orange-500/30"
+                                : "bg-zinc-900 text-zinc-300 border-zinc-800"
+                            }`}
+                          >
+                            <span>{hobby}</span>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const currentList = currentUser.hobbies
+                                  .split(",")
+                                  .map(h => h.trim())
+                                  .filter(Boolean);
+                                const newList = currentList.filter(x => x !== hobby);
+                                const joined = newList.join(", ");
+                                
+                                // Save locally
+                                const updatedUser = { ...currentUser, hobbies: joined };
+                                localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
+                                const cachedUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+                                const updatedCached = cachedUsers.map((u: any) => u.id === currentUser.id ? updatedUser : u);
+                                localStorage.setItem("ledger_users", JSON.stringify(updatedCached));
+                                setCurrentUser(updatedUser);
+
+                                // Save to server
+                                try {
+                                  await fetch("/api/auth/update-hobbies", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ userId: currentUser.id, hobbies: joined })
+                                  });
+                                } catch (err) {
+                                  console.error("Failed to sync removed hobby to server:", err);
+                                }
+                              }}
+                              className="hover:text-red-500 hover:bg-zinc-800 text-zinc-500 font-black rounded-xs w-3.5 h-3.5 flex items-center justify-center cursor-pointer transition-colors text-[9px]"
+                              title={`Remove ${hobby}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })
+                  ) : (
+                    <span className="text-xs text-zinc-600 font-mono italic">No topics selected</span>
+                  )}
+                  <button
+                    onClick={() => setIsHobbiesModalOpen(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-500 hover:bg-orange-600 text-black border border-orange-500 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                  >
+                    ＋ Add New Hobbies / Subjects
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -985,6 +1053,13 @@ export default function App() {
           currentMonth={currentMonth}
           currentYear={currentYear}
           stats={stats}
+        />
+
+        <HobbiesModal
+          isOpen={isHobbiesModalOpen}
+          onClose={() => setIsHobbiesModalOpen(false)}
+          currentUser={currentUser}
+          onUpdateCurrentUser={setCurrentUser}
         />
       </div>
     </div>

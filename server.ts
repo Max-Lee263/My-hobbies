@@ -240,6 +240,29 @@ Analyze the user's intent, then output the updated focus/hobbies, and the recomm
     }
   });
 
+  // Update user's focus hobbies
+  app.post("/api/auth/update-hobbies", (req, res) => {
+    try {
+      const { userId, hobbies } = req.body;
+      if (!userId) {
+        return res.status(400).json({ error: "Missing userId" });
+      }
+
+      const serverUsers = loadServerUsers();
+      const userIndex = serverUsers.findIndex((u: any) => u.id === userId);
+      if (userIndex === -1) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      serverUsers[userIndex].hobbies = hobbies;
+      saveServerUsers(serverUsers);
+
+      res.json({ success: true, user: serverUsers[userIndex] });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // --- REAL-TIME USERS AND SOCIAL ENDPOINTS ---
 
   // Get all users with online status and request list
