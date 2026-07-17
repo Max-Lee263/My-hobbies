@@ -78,7 +78,7 @@ export default function StatsGrid({
           <div className="absolute top-0 right-0 w-[1px] h-8 bg-orange-500/20 group-hover:bg-orange-500/60 transition-colors"></div>
 
           <div className="flex justify-between items-start mb-2">
-            <span className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em]">
+            <span className="text-[12px] font-mono font-black text-orange-500 uppercase tracking-widest">
               {stat.title}
             </span>
             <div className={`p-2 rounded-none border ${stat.color}`}>
@@ -86,10 +86,10 @@ export default function StatsGrid({
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-3xl font-black text-white tracking-tighter uppercase font-sans">
+            <span className="text-4xl font-black text-white tracking-tighter uppercase font-sans">
               {stat.value}
             </span>
-            <p className="text-[11px] text-zinc-500 mt-1 font-sans">
+            <p className="text-[12px] text-zinc-400 mt-1.5 font-bold uppercase tracking-tight font-mono">
               {stat.description}
             </p>
           </div>

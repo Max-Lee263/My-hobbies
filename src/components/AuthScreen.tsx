@@ -1,7 +1,7 @@
 import React, { useState, FormEvent, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { User } from "../types";
-import { KeyRound, Mail, Phone, School, Sparkles, UserPlus, LogIn, Heart, Check, Plus, ChevronDown, ChevronUp, Award, BookOpen } from "lucide-react";
+import { KeyRound, Mail, Phone, School, Sparkles, UserPlus, LogIn, Heart, Check, Plus, ChevronDown, ChevronUp, Award, BookOpen, Eye, EyeOff, HelpCircle, RefreshCw, ArrowLeft } from "lucide-react";
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
@@ -75,6 +75,21 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
   const [regError, setRegError] = useState("");
   const [showQuickSelect, setShowQuickSelect] = useState(false);
   const [activeRegSubject, setActiveRegSubject] = useState("Physics");
+
+  // Show/Hide password states
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegPassword, setShowRegPassword] = useState(false);
+
+  // Forgot Password flow states
+  const [isForgotFlow, setIsForgotFlow] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotMobile, setForgotMobile] = useState("");
+  const [forgotNewPassword, setForgotNewPassword] = useState("");
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
+  const [forgotError, setForgotError] = useState("");
+  const [forgotSuccess, setForgotSuccess] = useState("");
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
 
   // Sync existing local accounts to server database on mount
   useEffect(() => {
@@ -193,6 +208,60 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
     }
   };
 
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError("");
+    setForgotSuccess("");
+
+    if (!forgotEmail.trim() || !forgotMobile.trim() || !forgotNewPassword.trim()) {
+      setForgotError("Please fill in all required fields.");
+      return;
+    }
+
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setForgotError("Passwords do not match.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: forgotEmail.trim(),
+          mobile: forgotMobile.trim(),
+          newPassword: forgotNewPassword
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setForgotError(data.error || "Failed to reset password.");
+        return;
+      }
+
+      // Update in local cache as well
+      const localUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+      const updatedUsers = localUsers.map(u => {
+        if (u.email.toLowerCase() === forgotEmail.trim().toLowerCase() && u.mobile.trim() === forgotMobile.trim()) {
+          return { ...u, password: forgotNewPassword };
+        }
+        return u;
+      });
+      localStorage.setItem("ledger_users", JSON.stringify(updatedUsers));
+
+      setForgotSuccess("Password updated successfully! You can now sign in with your new password.");
+      
+      // Clear fields
+      setForgotEmail("");
+      setForgotMobile("");
+      setForgotNewPassword("");
+      setForgotConfirmPassword("");
+    } catch (err: any) {
+      setForgotError("Failed to connect to ledger server.");
+    }
+  };
+
   // Quick Demo Login
   const handleDemoLogin = async (demoUser: Omit<User, "password">) => {
     // Attempt standard login first
@@ -262,7 +331,7 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="text-4xl sm:text-5xl font-black text-white tracking-tighter uppercase leading-none"
         >
-          HABIT <span className="text-orange-500">LEDGER</span>
+          MST <span className="text-orange-500">LEDGER</span>
         </motion.h1>
         
         <p className="mt-3 text-xs text-zinc-500 font-mono">
@@ -282,117 +351,292 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
         <div className="absolute bottom-0 left-0 w-12 h-[1px] bg-orange-500/20"></div>
         <div className="absolute bottom-0 left-0 w-[1px] h-12 bg-orange-500/20"></div>
 
-        {/* Tab Buttons */}
-        <div className="flex border-b border-zinc-800 mb-6">
-          <button
-            onClick={() => { setActiveTab("login"); setLoginError(""); }}
-            className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-widest transition-colors duration-200 border-b-2 flex items-center justify-center gap-2 ${
-              activeTab === "login"
-                ? "border-orange-500 text-white"
-                : "border-transparent text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            Sign In
-          </button>
-          <button
-            onClick={() => { setActiveTab("register"); setRegError(""); }}
-            className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-widest transition-colors duration-200 border-b-2 flex items-center justify-center gap-2 ${
-              activeTab === "register"
-                ? "border-orange-500 text-white"
-                : "border-transparent text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            Register Account
-          </button>
-        </div>
-
-        {activeTab === "login" ? (
-          /* LOGIN FORM */
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
-            
-            {/* Login Toggle */}
-            <div className="flex bg-zinc-900/60 p-1 border border-zinc-900 rounded-none mb-2">
+        {isForgotFlow ? (
+          /* FORGOT PASSWORD FORM */
+          <form onSubmit={handleForgotSubmit} className="space-y-4">
+            <div className="space-y-1">
               <button
                 type="button"
-                onClick={() => { setLoginMethod("email"); setLoginIdentifier(""); }}
-                className={`flex-1 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors duration-150 ${
-                  loginMethod === "email" ? "bg-orange-500 text-black" : "text-zinc-400 hover:text-white"
-                }`}
+                onClick={() => {
+                  setIsForgotFlow(false);
+                  setForgotError("");
+                  setForgotSuccess("");
+                }}
+                className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-zinc-400 hover:text-orange-500 uppercase tracking-wider transition-colors cursor-pointer mb-2"
               >
-                Email ID / Gmail
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Sign In</span>
               </button>
-              <button
-                type="button"
-                onClick={() => { setLoginMethod("mobile"); setLoginIdentifier(""); }}
-                className={`flex-1 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors duration-150 ${
-                  loginMethod === "mobile" ? "bg-orange-500 text-black" : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                Mobile Number
-              </button>
+              <h3 className="text-sm font-black text-white uppercase tracking-tight">
+                Reset Ledger Password
+              </h3>
+              <p className="text-[10px] text-zinc-500 font-mono">
+                Verify your account email and mobile number to reset your password manually.
+              </p>
             </div>
 
-            {/* Error banner */}
-            {loginError && (
+            {/* Error & Success banner */}
+            {forgotError && (
               <div className="p-3 bg-red-950/20 border border-red-900/40 text-red-400 text-xs font-mono">
-                {loginError}
+                {forgotError}
+              </div>
+            )}
+            {forgotSuccess && (
+              <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 text-emerald-400 text-xs font-mono">
+                {forgotSuccess}
               </div>
             )}
 
-            {/* Credential input */}
+            {/* Email input */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em] flex items-center gap-1.5">
-                {loginMethod === "email" ? (
-                  <>
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>Email or Gmail ID</span>
-                  </>
-                ) : (
-                  <>
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>Mobile Number</span>
-                  </>
-                )}
+                <Mail className="w-3.5 h-3.5" />
+                <span>Account Email / Gmail ID</span>
               </label>
               <input
-                type={loginMethod === "email" ? "email" : "tel"}
-                placeholder={loginMethod === "email" ? "name@school.com" : "e.g. 9876543210"}
-                value={loginIdentifier}
-                onChange={(e) => setLoginIdentifier(e.target.value)}
+                type="email"
+                placeholder="name@school.com"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
                 className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
                 required
               />
             </div>
 
-            {/* Password input */}
+            {/* Mobile number */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em] flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5" />
+                <span>Account Mobile Number</span>
+              </label>
+              <input
+                type="tel"
+                placeholder="e.g. 9876543210"
+                value={forgotMobile}
+                onChange={(e) => setForgotMobile(e.target.value)}
+                className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
+                required
+              />
+            </div>
+
+            {/* New Password */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em] flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5" />
-                <span>Password</span>
+                <span>New Password</span>
               </label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showForgotNewPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={forgotNewPassword}
+                  onChange={(e) => setForgotNewPassword(e.target.value)}
+                  className="w-full pl-4 pr-11 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors cursor-pointer p-1"
+                  title={showForgotNewPassword ? "Hide" : "Show"}
+                >
+                  {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
-            {/* Submit */}
+            {/* Confirm New Password */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em] flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Confirm New Password</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showForgotConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={forgotConfirmPassword}
+                  onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                  className="w-full pl-4 pr-11 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowForgotConfirmPassword(!showForgotConfirmPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors cursor-pointer p-1"
+                  title={showForgotConfirmPassword ? "Hide" : "Show"}
+                >
+                  {showForgotConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Action Button */}
             <button
               type="submit"
               className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-black text-xs font-black uppercase tracking-widest shadow-xl transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
-              <LogIn className="w-4 h-4 stroke-[3px]" />
-              <span>Enter Ledger Room</span>
+              <RefreshCw className="w-4 h-4 stroke-[3px]" />
+              <span>Reset & Update Password</span>
             </button>
           </form>
         ) : (
-          /* REGISTRATION FORM */
+          <>
+            {/* Tab Buttons */}
+            <div className="flex border-b border-zinc-800 mb-6">
+              <button
+                onClick={() => { setActiveTab("login"); setLoginError(""); }}
+                className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-widest transition-colors duration-200 border-b-2 flex items-center justify-center gap-2 ${
+                  activeTab === "login"
+                    ? "border-orange-500 text-white"
+                    : "border-transparent text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                Sign In
+              </button>
+              <button
+                onClick={() => { setActiveTab("register"); setRegError(""); }}
+                className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-widest transition-colors duration-200 border-b-2 flex items-center justify-center gap-2 ${
+                  activeTab === "register"
+                    ? "border-orange-500 text-white"
+                    : "border-transparent text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Register Account
+              </button>
+            </div>
+
+            {activeTab === "login" ? (
+              /* LOGIN FORM */
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                
+                {/* Active Ledger Info Notice */}
+                <div className="p-3 bg-zinc-950 border border-zinc-900 rounded-none text-left mb-2">
+                  <div className="flex items-start gap-2">
+                    <HelpCircle className="w-4 h-4 text-orange-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[10px] font-mono font-black text-orange-400 uppercase tracking-wider">
+                        First Time or Returning? / पहली बार आए हैं?
+                      </p>
+                      <p className="text-[10px] text-zinc-400 mt-1 leading-normal">
+                        Since database refreshes after server updates, please <strong>Register Account</strong> if your login fails, or use the <strong>Quick Demo Log In</strong> cards below to test instantly!
+                      </p>
+                      <p className="text-[10px] text-zinc-500 mt-0.5 leading-normal italic font-sans">
+                        (चूंकि सर्वर अपडेट के बाद डेटा रीसेट हो सकता है, लॉगिन न होने पर नया अकाउंट बनाएं या नीचे दिए गए डेमो लॉग इन का उपयोग करें।)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Login Toggle */}
+                <div className="flex bg-zinc-900/60 p-1 border border-zinc-900 rounded-none mb-2">
+                  <button
+                    type="button"
+                    onClick={() => { setLoginMethod("email"); setLoginIdentifier(""); }}
+                    className={`flex-1 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors duration-150 ${
+                      loginMethod === "email" ? "bg-orange-500 text-black" : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Email ID / Gmail
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLoginMethod("mobile"); setLoginIdentifier(""); }}
+                    className={`flex-1 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors duration-150 ${
+                      loginMethod === "mobile" ? "bg-orange-500 text-black" : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Mobile Number
+                  </button>
+                </div>
+
+                {/* Error banner */}
+                {loginError && (
+                  <div className="p-3 bg-red-950/20 border border-red-900/40 text-red-400 text-xs font-mono space-y-1.5">
+                    <div>{loginError}</div>
+                    <div className="text-[10px] text-zinc-400 font-sans leading-relaxed pt-1.5 border-t border-red-900/30">
+                      💡 <strong>Note / ध्यान दें:</strong> यदि आपका पुराना अकाउंट लॉगिन नहीं हो रहा है, तो सर्वर रीस्टार्ट के कारण डेटा रीसेट हो गया हो सकता है। कृपया <strong>Register Account</strong> पर जाकर एक नया अकाउंट बनाएं या नीचे दिए गए <strong>Quick Demo Log In</strong> बटन का उपयोग करें।
+                    </div>
+                  </div>
+                )}
+
+                {/* Credential input */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em] flex items-center gap-1.5">
+                    {loginMethod === "email" ? (
+                      <>
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>Email or Gmail ID</span>
+                      </>
+                    ) : (
+                      <>
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>Mobile Number</span>
+                      </>
+                    )}
+                  </label>
+                  <input
+                    type={loginMethod === "email" ? "email" : "tel"}
+                    placeholder={loginMethod === "email" ? "name@school.com" : "e.g. 9876543210"}
+                    value={loginIdentifier}
+                    onChange={(e) => setLoginIdentifier(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
+                    required
+                  />
+                </div>
+
+                {/* Password input */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em] flex items-center gap-1.5">
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Password</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsForgotFlow(true);
+                        setForgotError("");
+                        setForgotSuccess("");
+                      }}
+                      className="text-[10px] font-mono font-bold text-orange-500 hover:text-orange-400 uppercase tracking-wider transition-colors cursor-pointer"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showLoginPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      className="w-full pl-4 pr-11 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword(!showLoginPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors cursor-pointer p-1"
+                      title={showLoginPassword ? "Hide Password" : "Show Password"}
+                    >
+                      {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit */}
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-black text-xs font-black uppercase tracking-widest shadow-xl transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <LogIn className="w-4 h-4 stroke-[3px]" />
+                  <span>Enter Ledger Room</span>
+                </button>
+              </form>
+            ) : (
+              /* REGISTRATION FORM */
           <form onSubmit={handleRegisterSubmit} className="space-y-4">
             
             {/* Error banner */}
@@ -578,14 +822,24 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
                 <KeyRound className="w-3.5 h-3.5" />
                 <span>Ledger Security Password</span>
               </label>
-              <input
-                type="password"
-                placeholder="Create password"
-                value={regPassword}
-                onChange={(e) => setRegPassword(e.target.value)}
-                className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showRegPassword ? "text" : "password"}
+                  placeholder="Create password"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  className="w-full pl-4 pr-11 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowRegPassword(!showRegPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors cursor-pointer p-1"
+                  title={showRegPassword ? "Hide Password" : "Show Password"}
+                >
+                  {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             {/* Register Action */}
@@ -597,6 +851,8 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
               <span>Generate New Ledger Account</span>
             </button>
           </form>
+        )}
+        </>
         )}
 
         {/* Demo Accounts List to jump right in */}

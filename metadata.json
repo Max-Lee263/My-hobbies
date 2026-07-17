@@ -1,5 +1,5 @@
 {
-  "name": "Habit Tracker",
+  "name": "MST",
   "description": "A spreadsheet-style monthly habit tracker with dynamic progress calculations, streaks, and customizable habits.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

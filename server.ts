@@ -241,6 +241,33 @@ Analyze the user's intent, then output the updated focus/hobbies, and the recomm
   });
 
   // Update user's focus hobbies
+  app.post("/api/auth/forgot-password", (req, res) => {
+    try {
+      const { email, mobile, newPassword } = req.body;
+      if (!email || !mobile || !newPassword) {
+        return res.status(400).json({ error: "Missing required details to reset password" });
+      }
+
+      const serverUsers = loadServerUsers();
+      const userIndex = serverUsers.findIndex((u: any) => 
+        u.email.toLowerCase() === email.toLowerCase().trim() && 
+        u.mobile.trim() === mobile.trim()
+      );
+
+      if (userIndex === -1) {
+        return res.status(404).json({ error: "No account found with this email and mobile number combination." });
+      }
+
+      serverUsers[userIndex].password = newPassword;
+      saveServerUsers(serverUsers);
+
+      res.json({ success: true, message: "Password updated successfully!" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update user's focus hobbies
   app.post("/api/auth/update-hobbies", (req, res) => {
     try {
       const { userId, hobbies } = req.body;

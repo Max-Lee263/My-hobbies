@@ -18,6 +18,11 @@ import {
   Printer,
   LayoutGrid,
   Users,
+  Smartphone,
+  Tablet,
+  Monitor,
+  X,
+  Edit2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -112,8 +117,55 @@ export default function App() {
   // Navigation / Workspace tab state
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"ledger" | "ai_studio" | "social">("ledger");
   
+  // Device Mode Viewport Simulator ("desktop" | "tablet" | "mobile")
+  const [deviceMode, setDeviceMode] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  
   // AI Notification State
   const [aiSuccessMessage, setAiSuccessMessage] = useState<string | null>(null);
+
+  // Focus Hobby / Subject Edit State
+  const [selectedHobbyForEdit, setSelectedHobbyForEdit] = useState<string | null>(null);
+  const [editHobbyValue, setEditHobbyValue] = useState<string>("");
+
+  const handleUpdateHobbiesListDirect = async (joined: string, newSelectedHobbyName: string | null = selectedHobbyForEdit) => {
+    if (!currentUser) return;
+    const updatedUser = { ...currentUser, hobbies: joined };
+    localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
+    const cachedUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    const updatedCached = cachedUsers.map((u: any) => u.id === currentUser.id ? updatedUser : u);
+    localStorage.setItem("ledger_users", JSON.stringify(updatedCached));
+    setCurrentUser(updatedUser);
+
+    setSelectedHobbyForEdit(newSelectedHobbyName);
+
+    try {
+      await fetch("/api/auth/update-hobbies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUser.id, hobbies: joined })
+      });
+    } catch (err) {
+      console.error("Failed to sync hobbies list update to server:", err);
+    }
+  };
+
+  const handleAddFocusSubjectDirect = async (subjectName: string) => {
+    const trimmed = subjectName.trim();
+    if (!trimmed || !currentUser) return;
+
+    const currentList = currentUser.hobbies
+      ? currentUser.hobbies.split(",").map(h => h.trim()).filter(Boolean)
+      : [];
+
+    if (currentList.some(h => h.toLowerCase() === trimmed.toLowerCase())) {
+      alert("This subject already exists in your list.");
+      return;
+    }
+
+    const newList = [...currentList, trimmed];
+    const joined = newList.join(", ");
+    await handleUpdateHobbiesListDirect(joined);
+  };
 
   const handleNotifySuccess = (msg: string) => {
     setAiSuccessMessage(msg);
@@ -142,11 +194,32 @@ export default function App() {
   // Active selected tab / category
   const [selectedCategoryTab, setSelectedCategoryTab] = useState("All");
 
+  // Custom categories added by the user
+  const [customTabs, setCustomTabs] = useState<string[]>([]);
+
+  // Load customTabs when currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+      const stored = localStorage.getItem(`habit_tracker_custom_tabs_${currentUser.id}`);
+      if (stored) {
+        try {
+          setCustomTabs(JSON.parse(stored));
+        } catch (e) {
+          setCustomTabs([]);
+        }
+      } else {
+        setCustomTabs([]);
+      }
+    } else {
+      setCustomTabs([]);
+    }
+  }, [currentUser]);
+
   // Extract all unique categories present in user's habits (or fallback to "Routine")
   const existingCategories = useMemo(() => {
     const cats = habits.map((h) => h.category || "Routine").filter(Boolean);
-    return Array.from(new Set(["Routine", ...cats]));
-  }, [habits]);
+    return Array.from(new Set(["Routine", ...customTabs, ...cats]));
+  }, [habits, customTabs]);
 
   // Combine All with other tabs
   const allTabs = useMemo(() => {
@@ -167,6 +240,101 @@ export default function App() {
     }
     return habits.filter((h) => (h.category || "Routine") === selectedCategoryTab);
   }, [habits, selectedCategoryTab]);
+
+  const handleAddTab = () => {
+    const tabName = prompt("Enter new tab / sheet name:");
+    if (!tabName) return;
+    const trimmed = tabName.trim();
+    if (!trimmed) return;
+    if (trimmed.toLowerCase() === "all") {
+      alert("Cannot create a tab named 'All'.");
+      return;
+    }
+    if (existingCategories.includes(trimmed)) {
+      alert("This tab already exists.");
+      return;
+    }
+
+    const updatedCustomTabs = [...customTabs, trimmed];
+    setCustomTabs(updatedCustomTabs);
+    if (currentUser) {
+      localStorage.setItem(`habit_tracker_custom_tabs_${currentUser.id}`, JSON.stringify(updatedCustomTabs));
+    }
+    setSelectedCategoryTab(trimmed);
+  };
+
+  const handleRenameTab = (oldName: string) => {
+    if (oldName === "All") return;
+    const newName = prompt(`Rename tab / sheet "${oldName}" to:`, oldName);
+    if (!newName) return;
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return;
+    if (trimmed.toLowerCase() === "all") {
+      alert("Cannot rename to 'All'.");
+      return;
+    }
+
+    // 1. Update all habits that have this category
+    const updatedHabits = habits.map((h) => {
+      const cat = h.category || "Routine";
+      if (cat === oldName) {
+        return { ...h, category: trimmed };
+      }
+      return h;
+    });
+
+    setHabits(updatedHabits);
+    if (currentUser) {
+      localStorage.setItem(`habit_tracker_items_${currentUser.id}`, JSON.stringify(updatedHabits));
+    }
+
+    // 2. Update customTabs list
+    const updatedCustomTabs = customTabs.map((t) => t === oldName ? trimmed : t);
+    setCustomTabs(updatedCustomTabs);
+    if (currentUser) {
+      localStorage.setItem(`habit_tracker_custom_tabs_${currentUser.id}`, JSON.stringify(updatedCustomTabs));
+    }
+
+    // 3. Update active selection
+    if (selectedCategoryTab === oldName) {
+      setSelectedCategoryTab(trimmed);
+    }
+  };
+
+  const handleDeleteTab = (tabName: string) => {
+    if (tabName === "All" || tabName === "Routine") {
+      alert("System tabs cannot be deleted.");
+      return;
+    }
+    const confirmDelete = window.confirm(`Are you sure you want to delete tab "${tabName}"? All habits in this category will be moved to "Routine".`);
+    if (!confirmDelete) return;
+
+    // 1. Move habits under the deleted tab to "Routine"
+    const updatedHabits = habits.map((h) => {
+      const cat = h.category || "Routine";
+      if (cat === tabName) {
+        return { ...h, category: "Routine" };
+      }
+      return h;
+    });
+
+    setHabits(updatedHabits);
+    if (currentUser) {
+      localStorage.setItem(`habit_tracker_items_${currentUser.id}`, JSON.stringify(updatedHabits));
+    }
+
+    // 2. Remove from customTabs
+    const updatedCustomTabs = customTabs.filter((t) => t !== tabName);
+    setCustomTabs(updatedCustomTabs);
+    if (currentUser) {
+      localStorage.setItem(`habit_tracker_custom_tabs_${currentUser.id}`, JSON.stringify(updatedCustomTabs));
+    }
+
+    // 3. Reset active tab selection
+    if (selectedCategoryTab === tabName) {
+      setSelectedCategoryTab("All");
+    }
+  };
 
   // --- PARTITIONED DATA EFFECT ---
   useEffect(() => {
@@ -412,6 +580,39 @@ export default function App() {
     setAiSuccessMessage(`Successfully imported ${newTimeTables.length} study slots into your Daily Ledger!`);
   };
 
+  // Add habit directly (for Custom Time Table Builder)
+  const handleAddHabitDirect = (name: string, emoji: string, category: string) => {
+    if (!currentUser) return;
+    const newHabit: Habit = {
+      id: `habit-timetable-${Date.now()}`,
+      name,
+      emoji,
+      category,
+      createdAt: new Date().toISOString(),
+    };
+    setHabits((prev) => {
+      const updated = [...prev, newHabit];
+      const habitsKey = `habit_tracker_items_${currentUser.id}`;
+      localStorage.setItem(habitsKey, JSON.stringify(updated));
+      return updated;
+    });
+    setAiSuccessMessage(`Successfully added slot "${name}" to your timetable!`);
+  };
+
+  // Edit habit details directly (for Custom Time Table Builder)
+  const handleEditHabitDirect = (id: string, name: string, emoji: string, category: string) => {
+    if (!currentUser) return;
+    setHabits((prev) => {
+      const updated = prev.map((h) =>
+        h.id === id ? { ...h, name, emoji, category } : h
+      );
+      const habitsKey = `habit_tracker_items_${currentUser.id}`;
+      localStorage.setItem(habitsKey, JSON.stringify(updated));
+      return updated;
+    });
+    setAiSuccessMessage(`Successfully updated timetable slot details!`);
+  };
+
   // Delete habit
   const handleDeleteHabit = (habitId: string) => {
     if (!currentUser) return;
@@ -616,8 +817,70 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#f2f2f2] py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-orange-500 selection:text-black">
-      <div className="max-w-7xl mx-auto space-y-10">
+    <div className="min-h-screen bg-[#070707] text-[#f2f2f2] pb-16 font-sans selection:bg-orange-500 selection:text-black">
+      
+      {/* GURU SCREEN SIMULATOR CONTROL BAR */}
+      <div className="sticky top-0 z-40 bg-[#0c0c0c] border-b border-zinc-850 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-2 bg-orange-500 animate-pulse rounded-full shrink-0"></span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-black text-orange-500 uppercase tracking-widest">
+                GURU VIEWPORT SIMULATOR
+              </span>
+              <span className="text-[9px] font-mono font-bold bg-zinc-900 border border-zinc-800 text-zinc-400 px-1.5 py-0.5 uppercase tracking-wider">
+                ACTIVE: {deviceMode}
+              </span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-1.5 bg-zinc-950 p-1 border border-zinc-850">
+            <button
+              onClick={() => setDeviceMode("mobile")}
+              className={`px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
+                deviceMode === "mobile"
+                  ? "bg-orange-500 text-black font-black"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Mobile Screen</span>
+            </button>
+            <button
+              onClick={() => setDeviceMode("tablet")}
+              className={`px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
+                deviceMode === "tablet"
+                  ? "bg-orange-500 text-black font-black"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+              }`}
+            >
+              <Tablet className="w-3.5 h-3.5" />
+              <span>Tab Screen</span>
+            </button>
+            <button
+              onClick={() => setDeviceMode("desktop")}
+              className={`px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
+                deviceMode === "desktop"
+                  ? "bg-orange-500 text-black font-black"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+              }`}
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span>Desktop Screen</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main container wrapping simulated screens */}
+      <div className={`transition-all duration-300 mx-auto py-8 px-2 sm:px-4 ${
+        deviceMode === "mobile"
+          ? "max-w-[430px] border-4 border-zinc-800 bg-[#0a0a0a] rounded-[24px] shadow-2xl mt-6 min-h-[840px] p-2"
+          : deviceMode === "tablet"
+            ? "max-w-[768px] border-4 border-zinc-800 bg-[#0a0a0a] rounded-[20px] shadow-2xl mt-6 min-h-[1024px] p-3"
+            : "max-w-7xl"
+      }`}>
+        <div className="space-y-10">
         
         {/* --- INSTITUTIONAL / USER PROFILE BAR --- */}
         <div className="bg-zinc-950 border border-zinc-800 p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
@@ -657,46 +920,23 @@ export default function App() {
                         return (
                           <span
                             key={hobby}
-                            onClick={async (e) => {
+                            onClick={(e) => {
                               e.stopPropagation();
-                              const currentList = currentUser.hobbies
-                                .split(",")
-                                .map(h => h.trim())
-                                .filter(Boolean);
-                              const newList = currentList.filter(x => x !== hobby);
-                              const joined = newList.join(", ");
-                              
-                              // Save locally
-                              const updatedUser = { ...currentUser, hobbies: joined };
-                              localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
-                              const cachedUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
-                              const updatedCached = cachedUsers.map((u: any) => u.id === currentUser.id ? updatedUser : u);
-                              localStorage.setItem("ledger_users", JSON.stringify(updatedCached));
-                              setCurrentUser(updatedUser);
-
-                              // Save to server
-                              try {
-                                await fetch("/api/auth/update-hobbies", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ userId: currentUser.id, hobbies: joined })
-                                });
-                              } catch (err) {
-                                console.error("Failed to sync removed hobby to server:", err);
-                              }
+                              setSelectedHobbyForEdit(hobby);
+                              setEditHobbyValue(hobby);
                             }}
                             className={`inline-flex items-center gap-1.5 text-[10px] font-mono font-bold px-2 py-1.5 border transition-all cursor-pointer select-none ${
                               isMock
-                                ? "bg-orange-500/10 text-orange-400 border-orange-500/30 hover:border-red-500/50 hover:bg-red-950/20 hover:text-red-400"
-                                : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-red-500/50 hover:bg-red-950/20 hover:text-red-400"
+                                ? "bg-orange-500/10 text-orange-400 border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/20 hover:text-orange-300"
+                                : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-orange-500 hover:bg-zinc-900/80 hover:text-orange-300"
                             }`}
-                            title={`Click to remove "${hobby}"`}
+                            title={`Click to Edit or Remove "${hobby}"`}
                           >
                             <span>{hobby}</span>
                             <span
-                              className="text-zinc-500 hover:text-red-500 font-bold transition-colors text-[10px]"
+                              className="text-zinc-500 hover:text-orange-500 font-bold transition-colors text-[10px]"
                             >
-                              ×
+                              ⚙️
                             </span>
                           </span>
                         );
@@ -704,9 +944,29 @@ export default function App() {
                   ) : (
                     <span className="text-xs text-zinc-600 font-mono italic">No topics selected</span>
                   )}
+
+                  {/* Inline Subject Input Box - Press Enter to Add instantly */}
+                  <div className="inline-flex items-center bg-zinc-950 border border-zinc-800 focus-within:border-orange-500 px-2.5 py-1.5 text-[10px] font-mono font-bold max-w-[180px] transition-all">
+                    <input
+                      type="text"
+                      placeholder="＋ ENTER NEW SUBJECT..."
+                      className="bg-transparent border-none outline-hidden text-zinc-200 placeholder-zinc-650 w-full uppercase text-[10px] tracking-wider font-mono"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const val = e.currentTarget.value;
+                          if (val.trim()) {
+                            handleAddFocusSubjectDirect(val);
+                            e.currentTarget.value = "";
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+
                   <button
                     onClick={() => setIsHobbiesModalOpen(true)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-500 hover:bg-orange-600 text-black border border-orange-500 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-850 text-zinc-300 hover:text-orange-500 border border-zinc-800 hover:border-orange-500 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer"
                   >
                     ＋ New Time Table
                   </button>
@@ -762,12 +1022,12 @@ export default function App() {
               <h1 className="text-2xl sm:text-4xl md:text-5xl font-sans font-black text-white tracking-[0.12em] uppercase select-none leading-none">
                 {MONTH_NAMES[currentMonth]}
               </h1>
-              <div className="mt-2 flex items-center gap-3">
+              <div className="mt-2.5 flex items-center gap-3">
                 {/* Year Dropdown */}
                 <select
                   value={currentYear}
                   onChange={(e) => setCurrentYear(Number(e.target.value))}
-                  className="bg-transparent border-0 font-mono text-[10px] font-bold text-zinc-400 hover:text-orange-500 cursor-pointer focus:outline-hidden text-center uppercase tracking-wider"
+                  className="bg-zinc-900 px-2.5 py-1 border border-zinc-800 font-mono text-xs font-black text-zinc-350 hover:text-orange-500 cursor-pointer focus:outline-hidden text-center uppercase tracking-wider"
                 >
                   {Array.from({ length: 11 }, (_, i) => 2020 + i).map((y) => (
                     <option key={y} value={y} className="bg-zinc-950 text-zinc-100 font-sans">
@@ -776,13 +1036,13 @@ export default function App() {
                   ))}
                 </select>
 
-                <span className="h-1 w-1 rounded-none bg-orange-500"></span>
+                <span className="h-1.5 w-1.5 rounded-none bg-orange-500"></span>
 
                 {/* Quick Month Jumper */}
                 <select
                   value={currentMonth}
                   onChange={(e) => setCurrentMonth(Number(e.target.value))}
-                  className="bg-transparent border-0 text-[10px] font-bold uppercase tracking-widest text-zinc-400 hover:text-orange-500 cursor-pointer focus:outline-hidden text-center"
+                  className="bg-zinc-900 px-2.5 py-1 border border-zinc-800 text-xs font-black uppercase tracking-widest text-zinc-350 hover:text-orange-500 cursor-pointer focus:outline-hidden text-center"
                 >
                   {MONTH_NAMES.map((name, idx) => (
                     <option key={name} value={idx} className="bg-zinc-950 text-zinc-100 font-sans">
@@ -805,43 +1065,43 @@ export default function App() {
         </div>
 
         {/* --- SYSTEMATIC WORKSPACE NAVIGATION TABS --- */}
-        <div className="bg-zinc-950 border border-zinc-850 p-1.5 flex flex-col sm:flex-row gap-1.5 relative overflow-hidden">
+        <div className="bg-zinc-950 border border-zinc-850 p-2 flex flex-col sm:flex-row gap-2 relative overflow-hidden">
           {/* Decorative left line */}
           <div className="absolute top-0 left-0 w-12 h-[2px] bg-orange-500"></div>
           
           <button
             onClick={() => setActiveWorkspaceTab("ledger")}
-            className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 border border-transparent cursor-pointer ${
+            className={`flex-1 py-4 text-sm font-mono font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2.5 border border-transparent cursor-pointer ${
               activeWorkspaceTab === "ledger"
-                ? "bg-orange-500 text-black font-extrabold shadow-md"
-                : "text-zinc-400 hover:text-white hover:bg-zinc-900 border-zinc-900 hover:border-zinc-800"
+                ? "bg-orange-500 text-black font-extrabold shadow-md scale-[1.01]"
+                : "text-zinc-300 hover:text-white hover:bg-zinc-900 border-zinc-900 hover:border-zinc-850"
             }`}
           >
-            <LayoutGrid className="w-4 h-4" />
+            <LayoutGrid className="w-4.5 h-4.5" />
             <span>📊 Ledger Board</span>
           </button>
           
           <button
             onClick={() => setActiveWorkspaceTab("ai_studio")}
-            className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 border border-transparent cursor-pointer ${
+            className={`flex-1 py-4 text-sm font-mono font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2.5 border border-transparent cursor-pointer ${
               activeWorkspaceTab === "ai_studio"
-                ? "bg-orange-500 text-black font-extrabold shadow-md"
-                : "text-zinc-400 hover:text-white hover:bg-zinc-900 border-zinc-900 hover:border-zinc-800"
+                ? "bg-orange-500 text-black font-extrabold shadow-md scale-[1.01]"
+                : "text-zinc-300 hover:text-white hover:bg-zinc-900 border-zinc-900 hover:border-zinc-850"
             }`}
           >
-            <Sparkles className="w-4 h-4 animate-pulse" />
+            <Sparkles className="w-4.5 h-4.5 animate-pulse" />
             <span>✨ AI Co-Processor</span>
           </button>
 
           <button
             onClick={() => setActiveWorkspaceTab("social")}
-            className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 border border-transparent cursor-pointer ${
+            className={`flex-1 py-4 text-sm font-mono font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2.5 border border-transparent cursor-pointer ${
               activeWorkspaceTab === "social"
-                ? "bg-orange-500 text-black font-extrabold shadow-md"
-                : "text-zinc-400 hover:text-white hover:bg-zinc-900 border-zinc-900 hover:border-zinc-800"
+                ? "bg-orange-500 text-black font-extrabold shadow-md scale-[1.01]"
+                : "text-zinc-300 hover:text-white hover:bg-zinc-900 border-zinc-900 hover:border-zinc-850"
             }`}
           >
-            <Users className="w-4 h-4" />
+            <Users className="w-4.5 h-4.5" />
             <span>👥 Peer Network</span>
           </button>
         </div>
@@ -890,31 +1150,31 @@ export default function App() {
                 />
 
                 {/* --- WORKSPACE ACTIONS BAR --- */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 py-1">
-                  <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 py-2">
+                  <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
                     <button
                       onClick={() => setIsTimeTableModalOpen(true)}
-                      className="flex items-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-black rounded-none text-xs font-black uppercase tracking-widest shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
+                      className="flex items-center gap-2 px-6 py-3.5 bg-orange-500 hover:bg-orange-600 text-black rounded-none text-sm font-black uppercase tracking-widest shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
                     >
-                      <Plus className="w-4 h-4 stroke-[3px]" />
-                      <span>Add New Time Table</span>
+                      <Plus className="w-4.5 h-4.5 stroke-[3px]" />
+                      <span>Customise Study Timetable</span>
                     </button>
 
                     <button
                       onClick={handleExportCSV}
-                      className="flex items-center gap-2 px-5 py-3 bg-zinc-950 border border-zinc-800 hover:border-orange-500 text-zinc-200 rounded-none text-xs font-black uppercase tracking-widest shadow-md transition-all duration-300 cursor-pointer"
+                      className="flex items-center gap-2 px-5 py-3.5 bg-zinc-950 border border-zinc-800 hover:border-orange-500 text-zinc-100 rounded-none text-sm font-black uppercase tracking-widest shadow-md transition-all duration-300 cursor-pointer"
                       title="Export tracking data of this month to CSV"
                     >
-                      <Download className="w-4 h-4 text-orange-500" />
+                      <Download className="w-4.5 h-4.5 text-orange-500" />
                       <span>Export CSV</span>
                     </button>
 
                     <button
                       onClick={() => setIsPrintModalOpen(true)}
-                      className="flex items-center gap-2 px-5 py-3 bg-zinc-950 border border-zinc-800 hover:border-orange-500 text-zinc-200 rounded-none text-xs font-black uppercase tracking-widest shadow-md transition-all duration-300 cursor-pointer"
+                      className="flex items-center gap-2 px-5 py-3.5 bg-zinc-950 border border-zinc-800 hover:border-orange-500 text-zinc-100 rounded-none text-sm font-black uppercase tracking-widest shadow-md transition-all duration-300 cursor-pointer"
                       title="Print your Habits & Checklist or save as PDF"
                     >
-                      <Printer className="w-4 h-4 text-orange-500" />
+                      <Printer className="w-4.5 h-4.5 text-orange-500" />
                       <span>Print / PDF</span>
                     </button>
                   </div>
@@ -943,14 +1203,14 @@ export default function App() {
                 </div>
 
                 {/* --- HABIT CATEGORY TABS --- */}
-                <div className="bg-zinc-950 border border-zinc-850 p-3 flex flex-wrap items-center gap-2 justify-between relative overflow-hidden">
+                <div className="bg-zinc-950 border border-zinc-850 p-4 flex flex-wrap items-center gap-3 justify-between relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-16 h-[1px] bg-orange-500/40"></div>
                   
-                  <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                    <span className="text-[10px] font-mono font-bold text-zinc-500 uppercase pr-2 select-none hidden sm:inline-block">
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                    <span className="text-xs font-mono font-black text-orange-500 uppercase pr-2 select-none hidden sm:inline-block">
                       FILTER SHEETS:
                     </span>
-                    <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                       {allTabs.map((tab) => {
                         const isActive = selectedCategoryTab === tab;
                         const count = tab === "All" 
@@ -958,29 +1218,76 @@ export default function App() {
                           : habits.filter(h => (h.category || "Routine") === tab).length;
                         
                         return (
-                          <button
+                          <div
                             key={tab}
                             onClick={() => setSelectedCategoryTab(tab)}
-                            className={`px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider transition-all duration-150 flex items-center gap-1.5 cursor-pointer border ${
+                            className={`px-3.5 py-2 text-sm font-mono font-black uppercase tracking-wider transition-all duration-150 flex items-center gap-2 cursor-pointer border select-none ${
                               isActive
-                                ? "bg-orange-500 text-black border-orange-500 font-extrabold shadow-sm"
-                                : "bg-zinc-900 text-zinc-400 hover:text-white border-zinc-800 hover:border-zinc-700"
+                                ? "bg-orange-500 text-black border-orange-500 font-extrabold shadow-md scale-[1.01]"
+                                : "bg-zinc-900 text-zinc-350 hover:text-white border-zinc-800 hover:border-zinc-700"
                             }`}
                           >
                             <span>{tab}</span>
-                            <span className={`text-[9px] font-sans px-1.5 py-0.2 select-none ${
-                              isActive ? "bg-black/20 text-black font-black" : "bg-zinc-950 text-zinc-500 border border-zinc-850"
+                            <span className={`text-[11px] font-sans px-2 py-0.5 select-none font-black ${
+                              isActive ? "bg-black/20 text-black font-black" : "bg-zinc-950 text-zinc-400 border border-zinc-850"
                             }`}>
                               {count}
                             </span>
-                          </button>
+
+                            {/* Edit / Remove controls per click */}
+                            {tab !== "All" && (
+                              <div className="flex items-center gap-1 ml-1 border-l pl-1.5 border-current/20">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRenameTab(tab);
+                                  }}
+                                  title={`Rename tab "${tab}"`}
+                                  className={`p-0.5 transition-colors cursor-pointer ${
+                                    isActive 
+                                      ? "text-black hover:text-zinc-800" 
+                                      : "text-zinc-500 hover:text-orange-500"
+                                  }`}
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                
+                                {tab !== "Routine" && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteTab(tab);
+                                    }}
+                                    title={`Delete tab "${tab}"`}
+                                    className={`p-0.5 transition-colors cursor-pointer ${
+                                      isActive 
+                                        ? "text-black hover:text-zinc-800" 
+                                        : "text-zinc-500 hover:text-red-500"
+                                    }`}
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
+
+                      {/* Add tab option button */}
+                      <button
+                        onClick={handleAddTab}
+                        className="px-3.5 py-2 text-xs font-mono font-black uppercase tracking-wider bg-zinc-950 border border-zinc-850 hover:border-orange-500 text-zinc-400 hover:text-orange-500 transition-all flex items-center gap-1.5 cursor-pointer"
+                        title="Add a new custom tab sheet"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Tab</span>
+                      </button>
                     </div>
                   </div>
 
-                  <p className="text-[10px] font-mono text-zinc-500 hidden md:block">
-                    Showing <span className="text-orange-500 font-bold">{filteredHabits.length}</span> of {habits.length} habits
+                  <p className="text-xs font-mono font-black uppercase text-zinc-400 tracking-wide hidden md:block">
+                    Showing <span className="text-orange-500 font-black">{filteredHabits.length}</span> of {habits.length} habits
                   </p>
                 </div>
 
@@ -1086,9 +1393,154 @@ export default function App() {
         <TimeTableModal
           isOpen={isTimeTableModalOpen}
           onClose={() => setIsTimeTableModalOpen(false)}
-          onImport={handleImportTimeTables}
+          habits={habits}
+          onAddHabit={handleAddHabitDirect}
+          onEditHabit={handleEditHabitDirect}
+          onDeleteHabit={handleDeleteHabit}
         />
+        <AnimatePresence>
+          {selectedHobbyForEdit && (() => {
+            const currentHobbiesList = currentUser?.hobbies
+              ? currentUser.hobbies.split(",").map(h => h.trim()).filter(Boolean)
+              : [];
+            const currentIndex = currentHobbiesList.indexOf(selectedHobbyForEdit);
+
+            return (
+              <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xs flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="max-w-md w-full bg-zinc-950 border-2 border-zinc-800 p-6 shadow-2xl relative"
+                >
+                  {/* Visual Accent */}
+                  <div className="absolute top-0 left-0 w-full h-[3px] bg-orange-500"></div>
+                  
+                  <button
+                    onClick={() => setSelectedHobbyForEdit(null)}
+                    className="absolute top-4 right-4 p-1.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                    title="Close"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+
+                  <div className="space-y-5">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-mono font-black text-orange-500 uppercase tracking-widest block">
+                        Edit Focus Subject / Topic
+                      </span>
+                      <h3 className="text-base font-sans font-black text-white uppercase tracking-tight">
+                        Customize Subject & Position
+                      </h3>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-mono font-black text-zinc-400 uppercase tracking-wider block">
+                        Subject / Hobby Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editHobbyValue}
+                        onChange={(e) => setEditHobbyValue(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-zinc-950 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-750 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm font-bold uppercase"
+                        maxLength={40}
+                        placeholder="e.g. Mechanics, Cell Biology"
+                        autoFocus
+                      />
+                    </div>
+
+                    {/* Position / Reorder Section */}
+                    <div className="space-y-2 pt-1 border-t border-zinc-900">
+                      <span className="text-[10px] font-mono font-black text-orange-500 uppercase tracking-[0.25em] block">
+                        Position / Reorder List
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (currentIndex > 0) {
+                              const updatedList = [...currentHobbiesList];
+                              const temp = updatedList[currentIndex];
+                              updatedList[currentIndex] = updatedList[currentIndex - 1];
+                              updatedList[currentIndex - 1] = temp;
+                              const joined = updatedList.join(", ");
+                              await handleUpdateHobbiesListDirect(joined, selectedHobbyForEdit);
+                            }
+                          }}
+                          disabled={currentIndex <= 0}
+                          className="py-2.5 bg-zinc-900 hover:bg-zinc-850 disabled:opacity-20 border border-zinc-800 disabled:border-zinc-900 text-zinc-300 hover:text-white disabled:hover:text-zinc-500 text-xs font-mono font-black uppercase tracking-widest transition-all duration-150 cursor-pointer flex items-center justify-center gap-2"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                          <span>Move Left</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (currentIndex < currentHobbiesList.length - 1) {
+                              const updatedList = [...currentHobbiesList];
+                              const temp = updatedList[currentIndex];
+                              updatedList[currentIndex] = updatedList[currentIndex + 1];
+                              updatedList[currentIndex + 1] = temp;
+                              const joined = updatedList.join(", ");
+                              await handleUpdateHobbiesListDirect(joined, selectedHobbyForEdit);
+                            }
+                          }}
+                          disabled={currentIndex >= currentHobbiesList.length - 1}
+                          className="py-2.5 bg-zinc-900 hover:bg-zinc-850 disabled:opacity-20 border border-zinc-800 disabled:border-zinc-900 text-zinc-300 hover:text-white disabled:hover:text-zinc-500 text-xs font-mono font-black uppercase tracking-widest transition-all duration-150 cursor-pointer flex items-center justify-center gap-2"
+                        >
+                          <span>Move Right</span>
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-zinc-900/50 border border-zinc-900 text-xs text-zinc-400 font-mono leading-relaxed">
+                      Modify this focus topic to update your profile, or reorder its positioning in the horizontal dashboard list.
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="grid grid-cols-2 gap-3 pt-1 border-t border-zinc-900">
+                      <button
+                        onClick={async () => {
+                          const trimmed = editHobbyValue.trim();
+                          if (!trimmed) return;
+                          const newList = currentHobbiesList.map(h => h === selectedHobbyForEdit ? trimmed : h);
+                          const joined = newList.join(", ");
+                          await handleUpdateHobbiesListDirect(joined, null);
+                        }}
+                        className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-black text-xs font-mono font-black uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>Save Changes</span>
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          const newList = currentHobbiesList.filter(h => h !== selectedHobbyForEdit);
+                          const joined = newList.join(", ");
+                          await handleUpdateHobbiesListDirect(joined, null);
+                        }}
+                        className="w-full py-3 bg-red-950/20 hover:bg-red-600 border border-red-900/50 hover:border-red-500 text-red-400 hover:text-black text-xs font-mono font-black uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Remove</span>
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => setSelectedHobbyForEdit(null)}
+                      className="w-full py-2 bg-zinc-950 hover:bg-zinc-900 text-zinc-500 hover:text-zinc-300 border border-zinc-900 text-[10px] font-mono uppercase tracking-widest cursor-pointer transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            );
+          })()}
+        </AnimatePresence>
       </div>
     </div>
+  </div>
   );
 }

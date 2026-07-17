@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Plus, Check, BookOpen, Trash2, Heart, Award, Sparkles, HelpCircle, ChevronRight } from "lucide-react";
+import { X, Plus, Check, BookOpen, Trash2, Heart, Award, Sparkles, HelpCircle, ChevronRight, Edit2 } from "lucide-react";
 import { User } from "../types";
 
 // Predefined subjects & topic options (including mock test parts)
@@ -52,6 +52,10 @@ export default function HobbiesModal({
   const [syncing, setSyncing] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // States to handle focus hobby editing inside the modal list
+  const [editingHobby, setEditingHobby] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<string>("");
+
   // Parse current user hobbies into an array of trimmed, unique strings
   const getCurrentHobbiesList = (): string[] => {
     if (!currentUser.hobbies) return [];
@@ -62,6 +66,28 @@ export default function HobbiesModal({
   };
 
   const currentHobbies = getCurrentHobbiesList();
+
+  const handleStartEdit = (e: React.MouseEvent, hobby: string) => {
+    e.stopPropagation();
+    setEditingHobby(hobby);
+    setEditValue(hobby);
+  };
+
+  const handleSaveEditedHobby = (oldHobby: string) => {
+    const trimmed = editValue.trim();
+    if (!trimmed) {
+      setEditingHobby(null);
+      return;
+    }
+    if (trimmed === oldHobby) {
+      setEditingHobby(null);
+      return;
+    }
+
+    const newList = currentHobbies.map(h => h === oldHobby ? trimmed : h);
+    saveUserHobbies(newList);
+    setEditingHobby(null);
+  };
 
   // Helper function to update the user object on both Client & Server
   const saveUserHobbies = async (updatedHobbiesList: string[]) => {
@@ -203,22 +229,79 @@ export default function HobbiesModal({
               <div className="flex flex-wrap gap-2 p-3.5 bg-zinc-900/40 border border-zinc-850">
                 {currentHobbies.map(hobby => {
                   const isMockTest = hobby.includes("Mock Test");
+                  const isEditingThis = editingHobby === hobby;
+
                   return (
                     <div
                       key={hobby}
-                      onClick={() => handleRemoveHobby(hobby)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono font-bold uppercase transition-all cursor-pointer border select-none ${
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono font-bold uppercase transition-all border select-none ${
                         isMockTest
-                          ? "bg-orange-500/10 text-orange-400 border-orange-500/30 hover:border-red-500 hover:bg-red-950/20 hover:text-red-400"
-                          : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-red-500 hover:bg-red-950/20 hover:text-red-400"
+                          ? "bg-orange-500/10 text-orange-400 border-orange-500/30"
+                          : "bg-zinc-900 text-zinc-300 border-zinc-800"
                       }`}
-                      title="Click to remove from list"
                     >
-                      {isMockTest && <Sparkles className="w-3 h-3 text-orange-500" />}
-                      <span>{hobby}</span>
-                      <span className="ml-1 text-zinc-500 hover:text-red-500 font-bold transition-colors text-[10.5px]">
-                        ×
-                      </span>
+                      {isEditingThis ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => handleSaveEditedHobby(hobby)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                handleSaveEditedHobby(hobby);
+                              } else if (e.key === "Escape") {
+                                setEditingHobby(null);
+                              }
+                            }}
+                            className="bg-zinc-950 border border-orange-500 text-xs px-2 py-1 text-zinc-100 focus:outline-hidden font-mono uppercase tracking-tight max-w-[150px]"
+                            autoFocus
+                          />
+                          <button
+                            onMouseDown={(e) => {
+                              // use onMouseDown to prevent onBlur from triggering first
+                              e.preventDefault();
+                              handleSaveEditedHobby(hobby);
+                            }}
+                            className="text-orange-500 hover:text-white px-1.5 font-black text-xs"
+                            title="Save Rename"
+                          >
+                            ✓
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          {isMockTest && <Sparkles className="w-3 h-3 text-orange-500" />}
+                          <span 
+                            onClick={(e) => handleStartEdit(e, hobby)} 
+                            className="cursor-pointer hover:text-orange-500 transition-colors"
+                            title="Click to Rename Subject"
+                          >
+                            {hobby}
+                          </span>
+                          
+                          {/* Inline Edit Pen Icon */}
+                          <button
+                            onClick={(e) => handleStartEdit(e, hobby)}
+                            className="p-1 text-zinc-600 hover:text-orange-500 hover:bg-zinc-800/60 transition-all ml-1.5"
+                            title="Rename Subject"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+
+                          {/* Delete/Remove button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveHobby(hobby);
+                            }}
+                            className="p-1 text-zinc-600 hover:text-red-500 hover:bg-red-950/20 transition-all font-bold text-xs"
+                            title="Delete / Remove Subject"
+                          >
+                            ×
+                          </button>
+                        </>
+                      )}
                     </div>
                   );
                 })}
