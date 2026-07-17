@@ -37,6 +37,7 @@ import SocialHub from "./components/SocialHub";
 import PrintHabitsModal from "./components/PrintHabitsModal";
 import AIPromptWidget from "./components/AIPromptWidget";
 import HobbiesModal from "./components/HobbiesModal";
+import TimeTableModal from "./components/TimeTableModal";
 
 export default function App() {
   // --- USER AUTHENTICATION STATE ---
@@ -105,6 +106,7 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isHobbiesModalOpen, setIsHobbiesModalOpen] = useState(false);
+  const [isTimeTableModalOpen, setIsTimeTableModalOpen] = useState(false);
   const [habitToEdit, setHabitToEdit] = useState<Habit | null>(null);
   
   // Navigation / Workspace tab state
@@ -391,6 +393,25 @@ export default function App() {
     setIsModalOpen(false);
   };
 
+  // Import selected study slots from Time Table preset list
+  const handleImportTimeTables = (newTimeTables: Array<{ name: string; emoji: string; category: string }>) => {
+    if (!currentUser) return;
+    setHabits((prev) => {
+      const generatedHabits: Habit[] = newTimeTables.map((item, idx) => ({
+        id: `habit-timetable-${Date.now()}-${idx}`,
+        name: item.name,
+        emoji: item.emoji,
+        category: item.category,
+        createdAt: new Date().toISOString(),
+      }));
+      const updated = [...prev, ...generatedHabits];
+      const habitsKey = `habit_tracker_items_${currentUser.id}`;
+      localStorage.setItem(habitsKey, JSON.stringify(updated));
+      return updated;
+    });
+    setAiSuccessMessage(`Successfully imported ${newTimeTables.length} study slots into your Daily Ledger!`);
+  };
+
   // Delete habit
   const handleDeleteHabit = (habitId: string) => {
     if (!currentUser) return;
@@ -636,47 +657,47 @@ export default function App() {
                         return (
                           <span
                             key={hobby}
-                            className={`inline-flex items-center gap-1.5 text-[10px] font-mono font-bold px-2 py-1 border transition-colors ${
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const currentList = currentUser.hobbies
+                                .split(",")
+                                .map(h => h.trim())
+                                .filter(Boolean);
+                              const newList = currentList.filter(x => x !== hobby);
+                              const joined = newList.join(", ");
+                              
+                              // Save locally
+                              const updatedUser = { ...currentUser, hobbies: joined };
+                              localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
+                              const cachedUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+                              const updatedCached = cachedUsers.map((u: any) => u.id === currentUser.id ? updatedUser : u);
+                              localStorage.setItem("ledger_users", JSON.stringify(updatedCached));
+                              setCurrentUser(updatedUser);
+
+                              // Save to server
+                              try {
+                                await fetch("/api/auth/update-hobbies", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ userId: currentUser.id, hobbies: joined })
+                                });
+                              } catch (err) {
+                                console.error("Failed to sync removed hobby to server:", err);
+                              }
+                            }}
+                            className={`inline-flex items-center gap-1.5 text-[10px] font-mono font-bold px-2 py-1.5 border transition-all cursor-pointer select-none ${
                               isMock
-                                ? "bg-orange-500/10 text-orange-400 border-orange-500/30"
-                                : "bg-zinc-900 text-zinc-300 border-zinc-800"
+                                ? "bg-orange-500/10 text-orange-400 border-orange-500/30 hover:border-red-500/50 hover:bg-red-950/20 hover:text-red-400"
+                                : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-red-500/50 hover:bg-red-950/20 hover:text-red-400"
                             }`}
+                            title={`Click to remove "${hobby}"`}
                           >
                             <span>{hobby}</span>
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                const currentList = currentUser.hobbies
-                                  .split(",")
-                                  .map(h => h.trim())
-                                  .filter(Boolean);
-                                const newList = currentList.filter(x => x !== hobby);
-                                const joined = newList.join(", ");
-                                
-                                // Save locally
-                                const updatedUser = { ...currentUser, hobbies: joined };
-                                localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
-                                const cachedUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
-                                const updatedCached = cachedUsers.map((u: any) => u.id === currentUser.id ? updatedUser : u);
-                                localStorage.setItem("ledger_users", JSON.stringify(updatedCached));
-                                setCurrentUser(updatedUser);
-
-                                // Save to server
-                                try {
-                                  await fetch("/api/auth/update-hobbies", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ userId: currentUser.id, hobbies: joined })
-                                  });
-                                } catch (err) {
-                                  console.error("Failed to sync removed hobby to server:", err);
-                                }
-                              }}
-                              className="hover:text-red-500 hover:bg-zinc-800 text-zinc-500 font-black rounded-xs w-3.5 h-3.5 flex items-center justify-center cursor-pointer transition-colors text-[9px]"
-                              title={`Remove ${hobby}`}
+                            <span
+                              className="text-zinc-500 hover:text-red-500 font-bold transition-colors text-[10px]"
                             >
                               ×
-                            </button>
+                            </span>
                           </span>
                         );
                       })
@@ -687,7 +708,7 @@ export default function App() {
                     onClick={() => setIsHobbiesModalOpen(true)}
                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-500 hover:bg-orange-600 text-black border border-orange-500 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer"
                   >
-                    ＋ Add New Hobbies / Subjects
+                    ＋ New Time Table
                   </button>
                 </div>
               </div>
@@ -726,27 +747,27 @@ export default function App() {
           </div>
 
           {/* Month Switcher & Visual Headline */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6 py-8 border-y border-zinc-900">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-3 border-y border-zinc-900">
             {/* Prev button */}
             <button
               onClick={handlePrevMonth}
-              className="p-2.5 text-zinc-500 hover:text-orange-500 hover:bg-zinc-900 border border-transparent hover:border-zinc-800 rounded-none transition-all cursor-pointer"
+              className="p-1.5 text-zinc-500 hover:text-orange-500 hover:bg-zinc-900 border border-transparent hover:border-zinc-800 rounded-none transition-all cursor-pointer"
               title="Previous Month"
             >
-              <ChevronLeft className="w-6 h-6" />
+              <ChevronLeft className="w-5 h-5" />
             </button>
 
             {/* Elegant Month Title exactly like user photo */}
             <div className="flex flex-col items-center">
-              <h1 className="text-4xl sm:text-6xl md:text-8xl font-sans font-black text-white tracking-[0.15em] uppercase select-none leading-none">
+              <h1 className="text-2xl sm:text-4xl md:text-5xl font-sans font-black text-white tracking-[0.12em] uppercase select-none leading-none">
                 {MONTH_NAMES[currentMonth]}
               </h1>
-              <div className="mt-4 flex items-center gap-3">
+              <div className="mt-2 flex items-center gap-3">
                 {/* Year Dropdown */}
                 <select
                   value={currentYear}
                   onChange={(e) => setCurrentYear(Number(e.target.value))}
-                  className="bg-transparent border-0 font-mono text-xs font-bold text-zinc-400 hover:text-orange-500 cursor-pointer focus:outline-hidden text-center uppercase tracking-wider"
+                  className="bg-transparent border-0 font-mono text-[10px] font-bold text-zinc-400 hover:text-orange-500 cursor-pointer focus:outline-hidden text-center uppercase tracking-wider"
                 >
                   {Array.from({ length: 11 }, (_, i) => 2020 + i).map((y) => (
                     <option key={y} value={y} className="bg-zinc-950 text-zinc-100 font-sans">
@@ -755,13 +776,13 @@ export default function App() {
                   ))}
                 </select>
 
-                <span className="h-1.5 w-1.5 rounded-none bg-orange-500"></span>
+                <span className="h-1 w-1 rounded-none bg-orange-500"></span>
 
                 {/* Quick Month Jumper */}
                 <select
                   value={currentMonth}
                   onChange={(e) => setCurrentMonth(Number(e.target.value))}
-                  className="bg-transparent border-0 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-orange-500 cursor-pointer focus:outline-hidden text-center"
+                  className="bg-transparent border-0 text-[10px] font-bold uppercase tracking-widest text-zinc-400 hover:text-orange-500 cursor-pointer focus:outline-hidden text-center"
                 >
                   {MONTH_NAMES.map((name, idx) => (
                     <option key={name} value={idx} className="bg-zinc-950 text-zinc-100 font-sans">
@@ -775,10 +796,10 @@ export default function App() {
             {/* Next button */}
             <button
               onClick={handleNextMonth}
-              className="p-2.5 text-zinc-500 hover:text-orange-500 hover:bg-zinc-900 border border-transparent hover:border-zinc-800 rounded-none transition-all cursor-pointer"
+              className="p-1.5 text-zinc-500 hover:text-orange-500 hover:bg-zinc-900 border border-transparent hover:border-zinc-800 rounded-none transition-all cursor-pointer"
               title="Next Month"
             >
-              <ChevronRight className="w-6 h-6" />
+              <ChevronRight className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -872,11 +893,11 @@ export default function App() {
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 py-1">
                   <div className="flex flex-wrap items-center gap-3">
                     <button
-                      onClick={handleOpenAddModal}
+                      onClick={() => setIsTimeTableModalOpen(true)}
                       className="flex items-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-black rounded-none text-xs font-black uppercase tracking-widest shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
                     >
                       <Plus className="w-4 h-4 stroke-[3px]" />
-                      <span>Add New Habit</span>
+                      <span>Add New Time Table</span>
                     </button>
 
                     <button
@@ -1060,6 +1081,12 @@ export default function App() {
           onClose={() => setIsHobbiesModalOpen(false)}
           currentUser={currentUser}
           onUpdateCurrentUser={setCurrentUser}
+        />
+
+        <TimeTableModal
+          isOpen={isTimeTableModalOpen}
+          onClose={() => setIsTimeTableModalOpen(false)}
+          onImport={handleImportTimeTables}
         />
       </div>
     </div>

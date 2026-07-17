@@ -206,21 +206,19 @@ export default function HobbiesModal({
                   return (
                     <div
                       key={hobby}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold uppercase transition-all select-none border ${
+                      onClick={() => handleRemoveHobby(hobby)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono font-bold uppercase transition-all cursor-pointer border select-none ${
                         isMockTest
-                          ? "bg-orange-500/10 text-orange-400 border-orange-500/30 shadow-inner"
-                          : "bg-zinc-900 text-zinc-300 border-zinc-800"
+                          ? "bg-orange-500/10 text-orange-400 border-orange-500/30 hover:border-red-500 hover:bg-red-950/20 hover:text-red-400"
+                          : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-red-500 hover:bg-red-950/20 hover:text-red-400"
                       }`}
+                      title="Click to remove from list"
                     >
                       {isMockTest && <Sparkles className="w-3 h-3 text-orange-500" />}
                       <span>{hobby}</span>
-                      <button
-                        onClick={() => handleRemoveHobby(hobby)}
-                        className="ml-1 text-zinc-500 hover:text-red-500 font-black cursor-pointer hover:bg-zinc-800 rounded-sm w-4 h-4 flex items-center justify-center transition-colors text-[10px]"
-                        title="Remove from your focus list"
-                      >
+                      <span className="ml-1 text-zinc-500 hover:text-red-500 font-bold transition-colors text-[10.5px]">
                         ×
-                      </button>
+                      </span>
                     </div>
                   );
                 })}

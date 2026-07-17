@@ -1,5 +1,6 @@
-import { motion } from "motion/react";
-import { Trash2, Edit2, ChevronUp, ChevronDown, CheckSquare, Square, Check, RefreshCw } from "lucide-react";
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Trash2, Edit2, ChevronUp, ChevronDown, CheckSquare, Square, Check, RefreshCw, X, Minimize2, Maximize2 } from "lucide-react";
 import { Habit, HabitLog } from "../types";
 import { CalendarDay, groupDaysIntoWeeks } from "../utils";
 
@@ -25,6 +26,8 @@ export default function HabitGrid({
   onQuickFillDay,
 }: HabitGridProps) {
   const weeks = groupDaysIntoWeeks(days);
+  const [actionHabit, setActionHabit] = useState<Habit | null>(null);
+  const [isMinimized, setIsMinimized] = useState(false);
 
   // Calculate daily progress statistics
   const dayStats = days.map((day) => {
@@ -47,9 +50,19 @@ export default function HabitGrid({
           <span className="w-2.5 h-2.5 bg-orange-500 animate-pulse"></span>
           <span>Click checkboxes to log. Headers dynamically compute daily progress logs.</span>
         </span>
-        <span className="text-[11px] bg-zinc-950 border border-zinc-800 px-3 py-0.5 rounded-none text-orange-500 font-bold">
-          HABITS LOADED: {habits.length}
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsMinimized(!isMinimized)}
+            className="text-[11px] bg-zinc-950 border border-zinc-800 px-3 py-1 text-zinc-300 hover:text-orange-500 hover:border-orange-500 transition-all font-bold flex items-center gap-1.5 cursor-pointer uppercase select-none"
+            title="Minimize/Maximize all check points and columns"
+          >
+            {isMinimized ? <Maximize2 className="w-3.5 h-3.5 text-orange-500" /> : <Minimize2 className="w-3.5 h-3.5 text-orange-500" />}
+            <span>{isMinimized ? "Normal View" : "Minimize All Points"}</span>
+          </button>
+          <span className="text-[11px] bg-zinc-950 border border-zinc-800 px-3 py-1 rounded-none text-orange-500 font-bold">
+            HABITS LOADED: {habits.length}
+          </span>
+        </div>
       </div>
 
       {/* Grid Scroll Wrapper */}
@@ -58,16 +71,20 @@ export default function HabitGrid({
           <thead>
             {/* Row 1: Weeks */}
             <tr className="bg-zinc-900/60 border-b border-zinc-800">
-              <th className="sticky left-0 bg-zinc-950 z-25 border-r border-zinc-800 min-w-[220px] max-w-[280px] p-4 text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.25em]">
+              <th className={`sticky left-0 bg-zinc-950 z-25 border-r border-zinc-800 font-mono font-bold text-orange-500 uppercase tracking-[0.25em] ${
+                isMinimized ? "min-w-[160px] max-w-[200px] p-2 text-[9px]" : "min-w-[220px] max-w-[280px] p-4 text-[10px]"
+              }`}>
                 My Habits Ledger
               </th>
               {weeks.map((week, weekIdx) => (
                 <th
                   key={weekIdx}
                   colSpan={week.length}
-                  className="border-r border-zinc-800 text-center py-2.5 text-xs font-black text-zinc-100 font-sans tracking-[0.2em] uppercase border-b border-zinc-800 bg-zinc-900/40"
+                  className={`border-r border-zinc-800 text-center font-black text-zinc-100 font-sans tracking-[0.2em] uppercase border-b border-zinc-800 bg-zinc-900/40 ${
+                    isMinimized ? "py-1 text-[10px]" : "py-2.5 text-xs"
+                  }`}
                 >
-                  Week {weekIdx + 1}
+                  W{weekIdx + 1}
                 </th>
               ))}
             </tr>
@@ -80,7 +97,9 @@ export default function HabitGrid({
                 return (
                   <th
                     key={day.dateKey}
-                    className={`border-r border-zinc-850 text-center py-1.5 text-[11px] font-bold font-mono tracking-wider w-11 min-w-[44px] ${
+                    className={`border-r border-zinc-850 text-center font-bold font-mono tracking-wider ${
+                      isMinimized ? "w-7 min-w-[28px] py-1 text-[9px]" : "w-11 min-w-[44px] py-1.5 text-[11px]"
+                    } ${
                       day.isToday
                         ? "bg-orange-500 text-black font-black"
                         : isWeekend
@@ -100,13 +119,17 @@ export default function HabitGrid({
               {days.map((day) => (
                 <th
                   key={day.dateKey}
-                  className={`border-r border-zinc-850 py-2 w-11 min-w-[44px] relative group text-center ${
+                  className={`border-r border-zinc-850 relative group text-center ${
+                    isMinimized ? "w-7 min-w-[28px] py-1" : "w-11 min-w-[44px] py-2"
+                  } ${
                     day.isToday ? "bg-zinc-900/60 text-orange-500" : "text-zinc-400"
                   }`}
                 >
                   <div className="flex flex-col items-center justify-center">
                     <span
-                      className={`text-xs font-black font-mono h-6 w-6 flex items-center justify-center ${
+                      className={`font-black font-mono flex items-center justify-center ${
+                        isMinimized ? "text-[10px] h-4 w-4" : "text-xs h-6 w-6"
+                      } ${
                         day.isToday ? "bg-orange-500 text-black font-black" : ""
                       }`}
                     >
@@ -144,28 +167,36 @@ export default function HabitGrid({
                 className="hover:bg-zinc-900/30 border-b border-zinc-900 group transition-colors"
               >
                 {/* Sticky Left Column: Habit details */}
-                <td className="sticky left-0 bg-zinc-950 group-hover:bg-zinc-900/90 z-20 border-r border-zinc-800 p-3 text-sm font-medium text-zinc-200 transition-colors">
+                <td className={`sticky left-0 bg-zinc-950 group-hover:bg-zinc-900/90 z-20 border-r border-zinc-800 transition-colors ${
+                  isMinimized ? "p-1.5 text-xs" : "p-3 text-sm"
+                }`}>
                   <div className="flex items-center justify-between">
                     <div 
-                      onClick={() => onEditHabit(habit)}
-                      className="flex items-center gap-2.5 truncate cursor-pointer hover:text-orange-500 group/item transition-all duration-200 active:scale-98"
-                      title="Click to edit habit"
+                      onClick={() => setActionHabit(habit)}
+                      className={`flex items-center truncate cursor-pointer hover:text-orange-500 group/item transition-all duration-200 active:scale-98 ${
+                        isMinimized ? "gap-1.5" : "gap-2.5"
+                      }`}
+                      title="Click to manage or delete item"
                     >
-                      <span className="text-lg flex-shrink-0 group-hover/item:scale-115 transition-transform duration-200">{habit.emoji}</span>
-                      <span className="truncate pr-1 font-sans font-bold text-zinc-100 group-hover/item:text-orange-500 transition-colors duration-200" title={habit.name}>
+                      <span className={`flex-shrink-0 group-hover/item:scale-115 transition-transform duration-200 ${
+                        isMinimized ? "text-sm" : "text-lg"
+                      }`}>{habit.emoji}</span>
+                      <span className={`truncate pr-1 font-sans font-bold text-zinc-100 group-hover/item:text-orange-500 transition-colors duration-200 ${
+                        isMinimized ? "text-[11px]" : "text-sm"
+                      }`} title={habit.name}>
                         {habit.name}
                       </span>
                     </div>
 
                     {/* Row controls (Move / Edit / Delete) */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all ml-1 flex-shrink-0 bg-zinc-950/90 group-hover:bg-zinc-900/95 pl-1 rounded-none">
+                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-all ml-1 flex-shrink-0 bg-zinc-950/90 group-hover:bg-zinc-900/95 pl-1 rounded-none">
                       <button
                         onClick={() => onMoveHabit(hIdx, "up")}
                         disabled={hIdx === 0}
                         title="Move Up"
                         className="p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-none disabled:opacity-20 transition-colors"
                       >
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className={isMinimized ? "w-3 h-3" : "w-3.5 h-3.5"} />
                       </button>
                       <button
                         onClick={() => onMoveHabit(hIdx, "down")}
@@ -173,21 +204,21 @@ export default function HabitGrid({
                         title="Move Down"
                         className="p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-none disabled:opacity-20 transition-colors"
                       >
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className={isMinimized ? "w-3 h-3" : "w-3.5 h-3.5"} />
                       </button>
                       <button
                         onClick={() => onEditHabit(habit)}
                         title="Edit Habit"
                         className="p-1 text-zinc-500 hover:text-orange-500 hover:bg-zinc-800 rounded-none transition-colors"
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Edit2 className={isMinimized ? "w-3 h-3 text-orange-500" : "w-3.5 h-3.5"} />
                       </button>
                       <button
                         onClick={() => onDeleteHabit(habit.id)}
                         title="Delete Habit"
                         className="p-1 text-zinc-500 hover:text-red-500 hover:bg-red-950/30 rounded-none transition-colors"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className={isMinimized ? "w-3 h-3" : "w-3.5 h-3.5"} />
                       </button>
                     </div>
                   </div>
@@ -204,7 +235,9 @@ export default function HabitGrid({
                         day.isToday ? "bg-zinc-900/20" : ""
                       }`}
                     >
-                      <div className="h-11 w-11 flex items-center justify-center mx-auto">
+                      <div className={`flex items-center justify-center mx-auto ${
+                        isMinimized ? "h-7 w-7" : "h-11 w-11"
+                      }`}>
                         <motion.button
                           type="button"
                           whileTap={{ scale: 0.9 }}
@@ -213,7 +246,9 @@ export default function HabitGrid({
                             borderColor: isCompleted ? "#f97316" : "#3f3f46",
                           }}
                           transition={{ duration: 0.1 }}
-                          className={`w-[20px] h-[20px] border rounded-none flex items-center justify-center focus:outline-hidden relative cursor-pointer`}
+                          className={`border rounded-none flex items-center justify-center focus:outline-hidden relative cursor-pointer ${
+                            isMinimized ? "w-[13px] h-[13px]" : "w-[20px] h-[20px]"
+                          }`}
                         >
                           {isCompleted && (
                             <motion.div
@@ -221,7 +256,9 @@ export default function HabitGrid({
                               animate={{ scale: 1, opacity: 1 }}
                               transition={{ type: "spring", damping: 12, stiffness: 200 }}
                             >
-                              <Check className="w-3.5 h-3.5 text-black stroke-[4px]" />
+                              <Check className={`text-black ${
+                                isMinimized ? "w-2.5 h-2.5 stroke-[4.5]" : "w-3.5 h-3.5 stroke-[4px]"
+                              }`} />
                             </motion.div>
                           )}
                         </motion.button>
@@ -234,7 +271,9 @@ export default function HabitGrid({
 
             {/* Bottom Progress Row 1: Percentage (%) */}
             <tr className="bg-zinc-900 border-t border-zinc-800 font-black font-mono text-center">
-              <td className="sticky left-0 bg-zinc-900 font-sans font-bold text-orange-500 border-r border-zinc-800 p-3 text-[10px] uppercase tracking-[0.2em] text-left">
+              <td className={`sticky left-0 bg-zinc-900 font-sans font-bold text-orange-500 border-r border-zinc-800 uppercase tracking-[0.2em] text-left ${
+                isMinimized ? "p-1.5 text-[9px]" : "p-3 text-[10px]"
+              }`}>
                 Progress %
               </td>
               {dayStats.map((stat) => {
@@ -243,10 +282,14 @@ export default function HabitGrid({
                 return (
                   <td
                     key={stat.dateKey}
-                    className="border-r border-zinc-900/50 py-3 text-xs text-center"
+                    className={`border-r border-zinc-900/50 text-center ${
+                      isMinimized ? "py-1 text-[10px]" : "py-3 text-xs"
+                    }`}
                   >
                     <span
-                      className={`px-1.5 py-0.5 rounded-none font-black font-mono text-[11px] ${
+                      className={`px-1.5 py-0.5 rounded-none font-black font-mono ${
+                        isMinimized ? "text-[9px] px-1 py-0" : "text-[11px]"
+                      } ${
                         isHigh
                           ? "text-orange-500 bg-orange-500/10 border border-orange-500/20"
                           : isZero
@@ -263,13 +306,17 @@ export default function HabitGrid({
 
             {/* Bottom Progress Row 2: Done Count */}
             <tr className="bg-zinc-900/60 border-b border-zinc-900 font-mono text-center">
-              <td className="sticky left-0 bg-zinc-900 font-sans font-bold text-zinc-400 border-r border-zinc-800 p-3 text-[10px] uppercase tracking-[0.2em] text-left">
+              <td className={`sticky left-0 bg-zinc-900 font-sans font-bold text-zinc-400 border-r border-zinc-800 uppercase tracking-[0.2em] text-left ${
+                isMinimized ? "p-1.5 text-[9px]" : "p-3 text-[10px]"
+              }`}>
                 Done
               </td>
               {dayStats.map((stat) => (
                 <td
                   key={stat.dateKey}
-                  className="border-r border-zinc-900/50 py-2.5 text-xs text-zinc-100 font-black"
+                  className={`border-r border-zinc-900/50 text-zinc-100 font-black ${
+                    isMinimized ? "py-1 text-[10px]" : "py-2.5 text-xs"
+                  }`}
                 >
                   {stat.doneCount}
                 </td>
@@ -278,7 +325,9 @@ export default function HabitGrid({
 
             {/* Bottom Progress Row 3: Remaining / Not Done Count */}
             <tr className="bg-zinc-900/30 font-mono text-center">
-              <td className="sticky left-0 bg-zinc-900 font-sans font-semibold text-zinc-500 border-r border-zinc-800 p-3 text-[10px] uppercase tracking-[0.2em] text-left">
+              <td className={`sticky left-0 bg-zinc-900 font-sans font-semibold text-zinc-500 border-r border-zinc-800 uppercase tracking-[0.2em] text-left ${
+                isMinimized ? "p-1.5 text-[9px]" : "p-3 text-[10px]"
+              }`}>
                 Not Done
               </td>
               {dayStats.map((stat) => {
@@ -286,7 +335,9 @@ export default function HabitGrid({
                 return (
                   <td
                     key={stat.dateKey}
-                    className="border-r border-zinc-900/50 py-2.5 text-xs text-zinc-500"
+                    className={`border-r border-zinc-900/50 text-zinc-500 ${
+                      isMinimized ? "py-1 text-[10px]" : "py-2.5 text-xs"
+                    }`}
                   >
                     {rem}
                   </td>
@@ -296,6 +347,85 @@ export default function HabitGrid({
           </tbody>
         </table>
       </div>
+
+      {/* Interactive Actions Modal to delete or edit item upon clicking it */}
+      <AnimatePresence>
+        {actionHabit && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-zinc-950 border-2 border-zinc-800 w-full max-w-md p-6 relative shadow-2xl"
+            >
+              {/* Top orange line accent */}
+              <div className="absolute top-0 left-0 w-full h-[3px] bg-orange-500"></div>
+              
+              <button
+                onClick={() => setActionHabit(null)}
+                className="absolute top-4 right-4 p-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-850 hover:border-zinc-700 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-mono font-black text-orange-500 uppercase tracking-[0.25em] block">
+                    Manage Schedule Item
+                  </span>
+                  <h4 className="text-base font-sans font-black text-white flex items-center gap-2.5">
+                    <span className="text-xl shrink-0">{actionHabit.emoji}</span>
+                    <span className="truncate">{actionHabit.name}</span>
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-mono font-bold bg-zinc-900 text-zinc-400 border border-zinc-850 px-2 py-0.5 uppercase tracking-wide">
+                      {actionHabit.category || "General Study"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-zinc-900/50 border border-zinc-900 text-xs text-zinc-400 font-mono leading-relaxed">
+                  Choose an action for this timetable item. Deleting it will permanently remove this entry and all its logs for this month.
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Are you sure you want to delete "${actionHabit.name}"?`)) {
+                        onDeleteHabit(actionHabit.id);
+                        setActionHabit(null);
+                      }
+                    }}
+                    className="w-full py-3 bg-red-950/20 hover:bg-red-600 border border-red-900/50 hover:border-red-500 text-red-400 hover:text-black text-xs font-mono font-black uppercase tracking-widest transition-all duration-150 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      onEditHabit(actionHabit);
+                      setActionHabit(null);
+                    }}
+                    className="w-full py-3 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-orange-500 text-zinc-200 hover:text-white text-xs font-mono font-black uppercase tracking-widest transition-all duration-150 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Edit2 className="w-4 h-4 text-orange-500" />
+                    <span>Edit Details</span>
+                  </button>
+                </div>
+                
+                <button
+                  onClick={() => setActionHabit(null)}
+                  className="w-full py-2 bg-zinc-950 hover:bg-zinc-900 text-zinc-500 hover:text-zinc-300 border border-zinc-900 text-[10px] font-mono uppercase tracking-widest cursor-pointer transition-colors"
+                >
+                  Close Options
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
