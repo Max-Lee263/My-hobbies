@@ -1,7 +1,7 @@
 import React, { useState, FormEvent, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { User } from "../types";
-import { KeyRound, Mail, Phone, School, Sparkles, UserPlus, LogIn, Heart, Check, Plus, ChevronDown, ChevronUp, Award, BookOpen, Eye, EyeOff, HelpCircle, RefreshCw, ArrowLeft } from "lucide-react";
+import { KeyRound, Mail, Phone, School, Sparkles, UserPlus, LogIn, Heart, Check, Plus, ChevronDown, ChevronUp, Award, BookOpen, Eye, EyeOff, HelpCircle, RefreshCw, ArrowLeft, Download, Upload, Copy, ShieldCheck, Trash2 } from "lucide-react";
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
@@ -91,6 +91,19 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
   const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
   const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
 
+  // Backup & Restore states
+  const [showBackupPanel, setShowBackupPanel] = useState(false);
+  const [backupText, setBackupText] = useState("");
+  const [backupSuccess, setBackupSuccess] = useState("");
+  const [backupError, setBackupError] = useState("");
+  const [localUsersList, setLocalUsersList] = useState<User[]>([]);
+
+  // Load and sync local users list on mount
+  useEffect(() => {
+    const localUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    setLocalUsersList(localUsers);
+  }, []);
+
   // Sync existing local accounts to server database on mount
   useEffect(() => {
     const localUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
@@ -154,6 +167,7 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
       if (!users.some(u => u.id === data.user.id)) {
         users.push(data.user);
         localStorage.setItem("ledger_users", JSON.stringify(users));
+        setLocalUsersList(users);
       }
 
       // Save active session token and user
@@ -175,8 +189,18 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
       return;
     }
 
+    // Try to find the user in our local backup/storage
+    const localUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    const matchedLocalUser = localUsers.find(u => {
+      if (loginMethod === "email") {
+        return u.email.toLowerCase() === loginIdentifier.toLowerCase().trim();
+      } else {
+        return u.mobile.trim() === loginIdentifier.trim();
+      }
+    });
+
     try {
-      const response = await fetch("/api/auth/login", {
+      let response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -186,17 +210,48 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
         })
       });
 
-      const data = await response.json();
+      let data = await response.json();
+      
+      // If the login failed, but we found a local backup user with matching credentials and password,
+      // let's auto-sync them to the server and retry logging in!
+      if ((!response.ok || !data.success) && matchedLocalUser && matchedLocalUser.password === loginPassword) {
+        console.log("User found in local backup. Auto-syncing to server database...");
+        try {
+          const syncRes = await fetch("/api/auth/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ users: [matchedLocalUser] })
+          });
+          
+          if (syncRes.ok) {
+            // Retry the login
+            response = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                loginMethod,
+                loginIdentifier,
+                password: loginPassword
+              })
+            });
+            data = await response.json();
+          }
+        } catch (syncErr) {
+          console.error("Auto-sync on login failed:", syncErr);
+        }
+      }
+
       if (!response.ok || !data.success) {
         setLoginError(data.error || "Invalid credentials.");
         return;
       }
 
       // Save to local cache if not present
-      const users: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
-      if (!users.some(u => u.id === data.user.id)) {
-        users.push(data.user);
-        localStorage.setItem("ledger_users", JSON.stringify(users));
+      const updatedUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+      if (!updatedUsers.some(u => u.id === data.user.id)) {
+        updatedUsers.push(data.user);
+        localStorage.setItem("ledger_users", JSON.stringify(updatedUsers));
+        setLocalUsersList(updatedUsers);
       }
 
       // Save active session token and user
@@ -259,6 +314,161 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
       setForgotConfirmPassword("");
     } catch (err: any) {
       setForgotError("Failed to connect to ledger server.");
+    }
+  };
+
+  // --- BACKUP & RECOVERY HANDLERS ---
+
+  // Export current local accounts
+  const handleExportBackup = () => {
+    setBackupSuccess("");
+    setBackupError("");
+    try {
+      const localUsers = localStorage.getItem("ledger_users") || "[]";
+      const parsed = JSON.parse(localUsers);
+      
+      if (!parsed || parsed.length === 0) {
+        setBackupError("No accounts found in your local backup on this device.");
+        return;
+      }
+
+      // 1. Download as file
+      const blob = new Blob([JSON.stringify(parsed, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `mst_accounts_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // 2. Copy string to clipboard as code
+      navigator.clipboard.writeText(JSON.stringify(parsed));
+      setBackupSuccess("Accounts Backup downloaded! Also copied backup code to clipboard successfully. (खाता बैकअप डाउनलोड हो गया और क्लिपबोर्ड पर कॉपी भी हो गया!)");
+    } catch (err: any) {
+      setBackupError("Failed to export backup: " + err.message);
+    }
+  };
+
+  // Import accounts from backup code/file
+  const handleImportBackup = async (inputText?: string) => {
+    setBackupSuccess("");
+    setBackupError("");
+    const sourceString = inputText || backupText;
+    
+    if (!sourceString.trim()) {
+      setBackupError("Please paste your backup code or choose a backup file first.");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(sourceString.trim());
+      if (!Array.isArray(parsed)) {
+        throw new Error("Backup data must be a valid list of account objects.");
+      }
+
+      // Check format of users
+      const validUsers = parsed.filter((u: any) => u && u.id && u.email && u.password);
+      if (validUsers.length === 0) {
+        throw new Error("No valid account records found in backup.");
+      }
+
+      // Save to localStorage
+      const existing: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+      let addedCount = 0;
+      validUsers.forEach((u: User) => {
+        if (!existing.some(existU => existU.id === u.id || existU.email.toLowerCase() === u.email.toLowerCase() || existU.mobile === u.mobile)) {
+          existing.push(u);
+          addedCount++;
+        }
+      });
+
+      localStorage.setItem("ledger_users", JSON.stringify(existing));
+      setLocalUsersList(existing);
+
+      // Sync with Server immediately so they can log in!
+      const syncRes = await fetch("/api/auth/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ users: existing })
+      });
+
+      if (!syncRes.ok) {
+        console.warn("Imported accounts saved locally but server synchronization failed.");
+      }
+
+      setBackupSuccess(`Import successful! Restored ${validUsers.length} total accounts (${addedCount} new accounts merged). You can now log in! (सफलतापूर्वक ${validUsers.length} खाते रिस्टोर हो गए!)`);
+      setBackupText("");
+    } catch (err: any) {
+      setBackupError("Invalid backup format: " + err.message);
+    }
+  };
+
+  // Handle backup file upload selection
+  const handleBackupFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        handleImportBackup(content);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Remove account from local device list
+  const handleDeleteFromLocalBackup = (userId: string) => {
+    if (!window.confirm("Are you sure you want to remove this account from your local device backup list? (क्या आप इस खाते को इस डिवाइस के बैकअप से हटाना चाहते हैं?)")) {
+      return;
+    }
+    const existing: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    const updated = existing.filter(u => u.id !== userId);
+    localStorage.setItem("ledger_users", JSON.stringify(updated));
+    setLocalUsersList(updated);
+    setBackupSuccess("Account removed from local backup on this device.");
+  };
+
+  // Quick direct log in and restore from saved backup item
+  const handleQuickLoginFromBackup = async (user: User) => {
+    setLoginError("");
+    try {
+      // 1. Force restore onto server
+      const syncRes = await fetch("/api/auth/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ users: [user] })
+      });
+      
+      if (!syncRes.ok) {
+        throw new Error("Failed to sync backup details to server");
+      }
+
+      // 2. Perform direct login
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          loginMethod: "email",
+          loginIdentifier: user.email,
+          password: user.password
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Incorrect password or email.");
+      }
+
+      // Save active session token and user
+      localStorage.setItem("ledger_session_token", data.sessionToken);
+      localStorage.setItem("ledger_current_user", JSON.stringify(data.user));
+      onLogin(data.user);
+    } catch (err: any) {
+      setLoginError(`Restore & Login Failed: ${err.message}`);
     }
   };
 
@@ -877,6 +1087,162 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Backup & Recovery Accordion */}
+        <div className="mt-4 pt-4 border-t border-zinc-900">
+          <button
+            type="button"
+            onClick={() => {
+              setShowBackupPanel(!showBackupPanel);
+              setBackupSuccess("");
+              setBackupError("");
+            }}
+            className="w-full py-2.5 bg-zinc-950 hover:bg-zinc-900 border border-zinc-850 text-zinc-300 hover:text-orange-450 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center justify-between px-3 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-orange-500" />
+              <span>Backup & Restore (डेटा बैकअप & रिकवरी)</span>
+            </div>
+            {showBackupPanel ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
+          </button>
+
+          <AnimatePresence>
+            {showBackupPanel && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden bg-zinc-950 border-x border-b border-zinc-850 p-3 space-y-4"
+              >
+                {/* Feedback Banners */}
+                {backupSuccess && (
+                  <div className="p-2.5 bg-green-950/20 border border-green-900/50 text-green-400 text-[10px] font-mono leading-normal">
+                    {backupSuccess}
+                  </div>
+                )}
+                {backupError && (
+                  <div className="p-2.5 bg-red-950/20 border border-red-900/50 text-red-400 text-[10px] font-mono leading-normal">
+                    {backupError}
+                  </div>
+                )}
+
+                {/* Local Accounts List (Quick Login Options) */}
+                <div>
+                  <p className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <span>1. Saved Backup Accounts on this Device</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">({localUsersList.length} saved)</span>
+                  </p>
+                  {localUsersList.length === 0 ? (
+                    <div className="p-3 border border-dashed border-zinc-900 text-center text-zinc-500 text-[9px] font-mono">
+                      No saved local accounts. Create an account to generate backups!
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-800">
+                      {localUsersList.map((user) => (
+                        <div
+                          key={user.id}
+                          className="flex items-center justify-between p-2 bg-zinc-900/40 border border-zinc-900 hover:border-zinc-850 transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-zinc-200 truncate font-sans">
+                              {user.name}
+                            </p>
+                            <p className="text-[9px] text-zinc-500 font-mono truncate">
+                              {user.email} • {user.mobile}
+                            </p>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 ml-2">
+                            <button
+                              type="button"
+                              onClick={() => handleQuickLoginFromBackup(user)}
+                              className="px-2 py-1 bg-orange-500/10 hover:bg-orange-500 text-orange-400 hover:text-black border border-orange-500/20 hover:border-orange-500 text-[9px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                              title="Restore to server and login instantly!"
+                            >
+                              Quick Login
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFromLocalBackup(user.id)}
+                              className="p-1 bg-zinc-950 hover:bg-red-950/20 text-zinc-500 hover:text-red-400 border border-zinc-900 hover:border-red-900/30 transition-colors cursor-pointer"
+                              title="Delete from local backup list"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Import / Export Controls */}
+                <div className="pt-2 border-t border-zinc-900 space-y-3">
+                  {/* Export */}
+                  <div>
+                    <p className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                      2. Export / Save Backup File (बैकअप सुरक्षित करें)
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleExportBackup}
+                      disabled={localUsersList.length === 0}
+                      className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 disabled:opacity-45 disabled:pointer-events-none border border-zinc-800 hover:border-orange-500/30 text-zinc-300 hover:text-white text-[10px] font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5 text-orange-500" />
+                      <span>Download Accounts Backup File (.json)</span>
+                    </button>
+                  </div>
+
+                  {/* Import File / Text */}
+                  <div className="space-y-2">
+                    <p className="text-[9px] font-mono font-bold text-zinc-400 uppercase tracking-wider">
+                      3. Restore from Backup (बैकअप वापस लोड करें)
+                    </p>
+                    
+                    {/* File Upload Button */}
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept=".json"
+                        onChange={handleBackupFileUpload}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        title="Upload backup .json file"
+                      />
+                      <div className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 border border-dashed border-zinc-800 hover:border-orange-500/30 text-zinc-400 hover:text-white text-[10px] font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors">
+                        <Upload className="w-3.5 h-3.5 text-orange-500" />
+                        <span>Choose Backup .json File</span>
+                      </div>
+                    </div>
+
+                    {/* Paste text option */}
+                    <div className="space-y-1.5">
+                      <textarea
+                        rows={2}
+                        placeholder="Or paste backup code string here..."
+                        value={backupText}
+                        onChange={(e) => setBackupText(e.target.value)}
+                        className="w-full p-2 bg-zinc-900 border border-zinc-850 text-zinc-200 placeholder-zinc-700 font-mono text-[9px] focus:outline-hidden focus:ring-1 focus:ring-orange-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleImportBackup()}
+                        className="w-full py-1.5 bg-orange-500/10 hover:bg-orange-500 text-orange-400 hover:text-black border border-orange-500/20 hover:border-orange-500 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Apply Pasted Backup Code</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[9px] font-sans text-zinc-500 italic text-center leading-normal">
+                  💡 Note: Backups contain security credentials. Keep backup files safe.
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
       </motion.div>
