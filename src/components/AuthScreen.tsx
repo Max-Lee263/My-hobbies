@@ -59,7 +59,7 @@ const PREDEFINED_SUBJECTS: Record<string, string[]> = {
 
 export default function AuthScreen({ onLogin }: AuthScreenProps) {
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
-  const [loginMethod, setLoginMethod] = useState<"email" | "mobile">("email");
+  const [loginMethod, setLoginMethod] = useState<"email" | "mobile" | "name">("email");
 
   // Login Form State
   const [loginIdentifier, setLoginIdentifier] = useState(""); // email or mobile
@@ -191,12 +191,12 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
 
     // Try to find the user in our local backup/storage
     const localUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    const identifier = loginIdentifier.toLowerCase().trim();
     const matchedLocalUser = localUsers.find(u => {
-      if (loginMethod === "email") {
-        return u.email.toLowerCase() === loginIdentifier.toLowerCase().trim();
-      } else {
-        return u.mobile.trim() === loginIdentifier.trim();
-      }
+      const emailMatch = u.email && u.email.toLowerCase() === identifier;
+      const mobileMatch = u.mobile && u.mobile.trim() === identifier;
+      const nameMatch = u.name && u.name.toLowerCase().trim() === identifier;
+      return emailMatch || mobileMatch || nameMatch;
     });
 
     try {
@@ -744,21 +744,30 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
                 <div className="flex bg-zinc-900/60 p-1 border border-zinc-900 rounded-none mb-2">
                   <button
                     type="button"
-                    onClick={() => { setLoginMethod("email"); setLoginIdentifier(""); }}
+                    onClick={() => { setLoginMethod("email"); }}
                     className={`flex-1 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors duration-150 ${
                       loginMethod === "email" ? "bg-orange-500 text-black" : "text-zinc-400 hover:text-white"
                     }`}
                   >
-                    Email ID / Gmail
+                    Email ID
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setLoginMethod("mobile"); setLoginIdentifier(""); }}
+                    onClick={() => { setLoginMethod("mobile"); }}
                     className={`flex-1 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors duration-150 ${
                       loginMethod === "mobile" ? "bg-orange-500 text-black" : "text-zinc-400 hover:text-white"
                     }`}
                   >
                     Mobile Number
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLoginMethod("name"); }}
+                    className={`flex-1 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors duration-150 ${
+                      loginMethod === "name" ? "bg-orange-500 text-black" : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Account Name
                   </button>
                 </div>
 
@@ -778,23 +787,37 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
                     {loginMethod === "email" ? (
                       <>
                         <Mail className="w-3.5 h-3.5" />
-                        <span>Email or Gmail ID</span>
+                        <span>Email, Mobile or Name</span>
+                      </>
+                    ) : loginMethod === "mobile" ? (
+                      <>
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>Mobile, Email or Name</span>
                       </>
                     ) : (
                       <>
-                        <Phone className="w-3.5 h-3.5" />
-                        <span>Mobile Number</span>
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Account Name, Email or Mobile</span>
                       </>
                     )}
                   </label>
                   <input
-                    type={loginMethod === "email" ? "email" : "tel"}
-                    placeholder={loginMethod === "email" ? "name@school.com" : "e.g. 9876543210"}
+                    type="text"
+                    placeholder={
+                      loginMethod === "email"
+                        ? "Enter Email (e.g. name@school.com)"
+                        : loginMethod === "mobile"
+                        ? "Enter Mobile (e.g. 9876543210)"
+                        : "Enter Account Name (e.g. Rahul Kumar)"
+                    }
                     value={loginIdentifier}
                     onChange={(e) => setLoginIdentifier(e.target.value)}
                     className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-none text-zinc-100 placeholder-zinc-650 focus:outline-hidden focus:ring-1 focus:ring-orange-500 transition-all font-sans text-sm"
                     required
                   />
+                  <p className="text-[9px] text-zinc-500 font-mono leading-normal">
+                    💡 You can enter Email ID, Mobile Number, or Account Name here to log in! (आप यहाँ ईमेल, मोबाइल नंबर, या अपना नाम डाल कर लॉगिन कर सकते हैं!)
+                  </p>
                 </div>
 
                 {/* Password input */}

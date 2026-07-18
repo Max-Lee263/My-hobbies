@@ -219,12 +219,12 @@ Analyze the user's intent, then output the updated focus/hobbies, and the recomm
       }
       
       const serverUsers = loadServerUsers();
+      const identifier = loginIdentifier.toLowerCase().trim();
       const user = serverUsers.find((u: any) => {
-        if (loginMethod === "email") {
-          return u.email.toLowerCase() === loginIdentifier.toLowerCase().trim() && u.password === password;
-        } else {
-          return u.mobile.trim() === loginIdentifier.trim() && u.password === password;
-        }
+        const emailMatch = u.email && u.email.toLowerCase() === identifier;
+        const mobileMatch = u.mobile && u.mobile.trim() === identifier;
+        const nameMatch = u.name && u.name.toLowerCase().trim() === identifier;
+        return (emailMatch || mobileMatch || nameMatch) && u.password === password;
       });
       
       if (!user) {
