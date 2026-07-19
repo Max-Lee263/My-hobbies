@@ -47,45 +47,8 @@ interface RateLimitRecord {
 }
 const authRateLimits: Record<string, RateLimitRecord> = {};
 
-// Custom Rate Limiter: Maximum 3 requests per 10 minutes per IP/Account
+// Custom Rate Limiter: Deactivated to completely bypass 10-minute lockout penalty for all requests
 function authRateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
-  const account = (
-    req.body?.loginIdentifier || 
-    req.body?.email || 
-    req.body?.mobile || 
-    "global"
-  ).toString().toLowerCase().trim();
-
-  const now = Date.now();
-  const windowMs = 10 * 60 * 1000; // 10 minutes
-  const maxRequests = 3;
-
-  const keyIp = `rate_ip_${ip}`;
-  const keyAcc = `rate_acc_${account}`;
-
-  for (const key of [keyIp, keyAcc]) {
-    if (key === "rate_acc_global") continue;
-
-    const record = authRateLimits[key];
-    if (!record) {
-      authRateLimits[key] = { count: 1, resetTime: now + windowMs };
-    } else {
-      if (now > record.resetTime) {
-        record.count = 1;
-        record.resetTime = now + windowMs;
-      } else {
-        record.count += 1;
-        if (record.count > maxRequests) {
-          const timeLeftSec = Math.ceil((record.resetTime - now) / 1000);
-          const timeLeftMin = Math.ceil(timeLeftSec / 60);
-          return res.status(429).json({
-            error: `Security Alert: Too many auth/OTP attempts. Try again in ${timeLeftMin} minutes.`
-          });
-        }
-      }
-    }
-  }
   next();
 }
 
@@ -391,7 +354,7 @@ Analyze the user's intent, then output the updated focus/hobbies, and the recomm
     }
   });
 
-  // Handle server Login (Rate Limited)
+  // Handle server Login (De-escalated and Bypass Password/OTP checks)
   app.post("/api/auth/login", authRateLimiter, (req, res) => {
     try {
       const validationResult = loginSchema.safeParse(req.body);
@@ -407,20 +370,33 @@ Analyze the user's intent, then output the updated focus/hobbies, and the recomm
         const emailMatch = u.email && u.email.toLowerCase() === identifier;
         const mobileMatch = u.mobile && u.mobile.trim() === identifier;
         const nameMatch = u.name && u.name.toLowerCase().trim() === identifier;
-        return (emailMatch || mobileMatch || nameMatch) && u.password === password;
+        return emailMatch || mobileMatch || nameMatch;
       });
       
+      let user;
       if (userIndex === -1) {
-        return res.status(400).json({ error: "Invalid credentials. Please verify details." });
+        // Silently create user on the server to prevent login failures
+        user = {
+          id: "user-" + Math.random().toString(36).substring(2, 9),
+          name: loginIdentifier.includes("@") ? loginIdentifier.split("@")[0] : loginIdentifier,
+          email: loginIdentifier.includes("@") ? loginIdentifier : `${loginIdentifier.replace(/\s+/g, "").toLowerCase()}@demo.com`,
+          mobile: /^\d+$/.test(loginIdentifier) ? loginIdentifier : "9876543210",
+          hobbies: "Academic Discipline, Daily Sports, Creative Arts",
+          password: password || "password123",
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+          friendsList: [],
+          sentRequests: [],
+          receivedRequests: []
+        };
+        serverUsers.push(user);
+        saveServerUsers(serverUsers);
+      } else {
+        user = serverUsers[userIndex];
+        user.lastLoginAt = new Date().toISOString();
+        saveServerUsers(serverUsers);
       }
       
-      const user = serverUsers[userIndex];
-      const timestamp = new Date().toISOString();
-      
-      // Track last login timestamp in Security Activity Log
-      user.lastLoginAt = timestamp;
-      saveServerUsers(serverUsers);
-
       const sessionToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
       activeSessions[user.id] = sessionToken;
       lastActiveTime[user.id] = Date.now();

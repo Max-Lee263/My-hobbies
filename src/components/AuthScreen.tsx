@@ -96,60 +96,45 @@ export default function AuthScreen({ onLogin }: AuthScreenProps) {
   const [backupText, setBackupText] = useState("");
   const [backupSuccess, setBackupSuccess] = useState("");
   const [backupError, setBackupError] = useState("");
-  const [localUsersList, setLocalUsersList] = useState<User[]>([]);
-
-  // Load and sync local users list on mount (including auto-seeding if empty)
-  useEffect(() => {
-    let localUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
-    let usersDb = JSON.parse(localStorage.getItem("users") || "[]");
-
-    // Auto-seed if both are empty (database is empty)
-    if (localUsers.length === 0 && usersDb.length === 0) {
-      const seeded: User[] = DEMO_ACCOUNTS.map(demo => ({
-        ...demo,
-        password: "password123" // Default master password for demo accounts
-      }));
-      localStorage.setItem("ledger_users", JSON.stringify(seeded));
-      localStorage.setItem("users", JSON.stringify(seeded));
-      localUsers = seeded;
-    } else {
-      // Sync local databases if one is empty
-      if (localUsers.length === 0 && usersDb.length > 0) {
-        localStorage.setItem("ledger_users", JSON.stringify(usersDb));
-        localUsers = usersDb;
-      } else if (usersDb.length === 0 && localUsers.length > 0) {
-        localStorage.setItem("users", JSON.stringify(localUsers));
+  // Stable LocalStorage Initializer (Anti-Overwrite via lazy state loading)
+  const [localUsersList, setLocalUsersList] = useState<User[]>(() => {
+    const usersDb = JSON.parse(localStorage.getItem("users") || "null");
+    const ledgerUsers = JSON.parse(localStorage.getItem("ledger_users") || "null");
+    
+    const loadedUsers = usersDb || ledgerUsers;
+    if (loadedUsers && loadedUsers.length > 0) {
+      // Keep local databases synchronized and avoid overwriting existing data
+      if (!localStorage.getItem("users")) {
+        localStorage.setItem("users", JSON.stringify(loadedUsers));
       }
+      if (!localStorage.getItem("ledger_users")) {
+        localStorage.setItem("ledger_users", JSON.stringify(loadedUsers));
+      }
+      return loadedUsers;
     }
+    
+    // Fallback/Seeding if entirely empty
+    const seeded: User[] = DEMO_ACCOUNTS.map(demo => ({
+      ...demo,
+      password: "password123"
+    }));
+    localStorage.setItem("ledger_users", JSON.stringify(seeded));
+    localStorage.setItem("users", JSON.stringify(seeded));
+    return seeded;
+  });
 
-    setLocalUsersList(localUsers);
-  }, []);
-
-  // Sync existing local accounts to server database on mount
+  // Sync existing local accounts to server database on mount (safely without overwriting local storage)
   useEffect(() => {
-    let localUsers = JSON.parse(localStorage.getItem("ledger_users") || "[]");
-    let usersDb = JSON.parse(localStorage.getItem("users") || "[]");
-
-    if (localUsers.length === 0 && usersDb.length === 0) {
-      const seeded: User[] = DEMO_ACCOUNTS.map(demo => ({
-        ...demo,
-        password: "password123"
-      }));
-      localStorage.setItem("ledger_users", JSON.stringify(seeded));
-      localStorage.setItem("users", JSON.stringify(seeded));
-      localUsers = seeded;
-    }
-
-    if (localUsers.length > 0) {
+    if (localUsersList && localUsersList.length > 0) {
       fetch("/api/auth/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ users: localUsers })
+        body: JSON.stringify({ users: localUsersList })
       })
       .then(res => res.json())
       .catch(err => console.error("Error syncing local users to server on load:", err));
     }
-  }, []);
+  }, [localUsersList]);
 
   // Handle Register
   const handleRegisterSubmit = async (e: React.FormEvent) => {
