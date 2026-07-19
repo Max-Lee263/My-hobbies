@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Plus, Check, BookOpen, Trash2, Heart, Award, Sparkles, HelpCircle, ChevronRight, Edit2 } from "lucide-react";
+import { X, Plus, Check, BookOpen, Trash2, Heart, Award, Sparkles, HelpCircle, ChevronRight, Edit2, ShieldCheck } from "lucide-react";
 import { User } from "../types";
 
 // Predefined subjects & topic options (including mock test parts)
@@ -429,6 +429,35 @@ export default function HobbiesModal({
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               Add Custom
             </button>
+          </div>
+
+          {/* Security Activity Log Section */}
+          <div className="p-4 bg-zinc-950/40 border border-zinc-900 rounded-none space-y-2 text-left">
+            <div className="flex items-center gap-2 text-red-500 font-mono text-[10px] font-black uppercase tracking-wider">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Security Activity Log / सुरक्षा लॉग</span>
+            </div>
+            <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wide leading-relaxed">
+              This log tracks successful authentication actions to help detect unauthorized device access.
+            </p>
+            <div className="bg-zinc-950 border border-zinc-900 p-2.5 space-y-1.5 font-mono text-[10px] text-zinc-400">
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-zinc-550 uppercase text-[9px]">Last Successful Login:</span>
+                <span className="text-emerald-500 font-bold text-[10px] font-mono">
+                  {currentUser.lastLoginAt
+                    ? new Date(currentUser.lastLoginAt).toLocaleString()
+                    : new Date(currentUser.createdAt || Date.now()).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between items-center gap-4 border-t border-zinc-900/50 pt-1.5">
+                <span className="text-zinc-550 uppercase text-[9px]">Device Isolation State:</span>
+                <span className="text-blue-400 font-bold uppercase text-[9px]">Memory Shield Active</span>
+              </div>
+              <div className="flex justify-between items-center gap-4">
+                <span className="text-zinc-550 uppercase text-[9px]">Session Token Storage:</span>
+                <span className="text-red-400 font-bold uppercase text-[9px]">HttpOnly Cookie Isolated</span>
+              </div>
+            </div>
           </div>
 
         </div>

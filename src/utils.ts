@@ -89,7 +89,7 @@ export function calculateHabitStreaks(
   logs: HabitLog,
   currentYear: number,
   currentMonth: number
-): { currentStreak: number; longestStreak: number; totalCompleted: number } {
+): { currentStreak: number; longestStreak: number; totalCompleted: number; isStreakAtRisk: boolean } {
   let totalCompleted = 0;
   
   // Collect all date keys that have this habit completed, sorted chronologically
@@ -104,7 +104,7 @@ export function calculateHabitStreaks(
   totalCompleted = completedDates.length;
 
   if (completedDates.length === 0) {
-    return { currentStreak: 0, longestStreak: 0, totalCompleted: 0 };
+    return { currentStreak: 0, longestStreak: 0, totalCompleted: 0, isStreakAtRisk: false };
   }
 
   let longestStreak = 0;
@@ -172,9 +172,12 @@ export function calculateHabitStreaks(
     currentStreak = 0;
   }
 
+  const isStreakAtRisk = currentStreak > 0 && !hasCompletedToday;
+
   return {
     currentStreak,
     longestStreak,
     totalCompleted,
+    isStreakAtRisk,
   };
 }

@@ -53,26 +53,83 @@ export default function SocialHub({
 
   // Fetch all users and chats from server & localStorage
   const loadNetworkData = async () => {
+    let serverUsersList: User[] = [];
     try {
       const response = await fetch("/api/auth/users");
       if (response.ok) {
         const data = await response.json();
         if (data.success && Array.isArray(data.users)) {
-          setAllUsers(data.users);
-          localStorage.setItem("ledger_users", JSON.stringify(data.users));
-
-          // Keep currentUser synchronized in case friend list was updated on server
-          const freshSelf = data.users.find((u: any) => u.id === currentUser.id);
-          if (freshSelf && JSON.stringify(freshSelf) !== JSON.stringify(currentUser)) {
-            localStorage.setItem("ledger_current_user", JSON.stringify(freshSelf));
-            onUpdateCurrentUser(freshSelf);
-          }
+          serverUsersList = data.users;
+          localStorage.setItem("ledger_network_users", JSON.stringify(data.users));
         }
       }
     } catch (e) {
       console.error("Failed to load users from server, falling back to local:", e);
-      const users: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
-      setAllUsers(users);
+      serverUsersList = JSON.parse(localStorage.getItem("ledger_network_users") || "[]");
+    }
+
+    // Now load local accounts from localStorage: "ledger_users"
+    const localUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+
+    // Merge them by ID. Priority goes to what's in ledger_users since they might have local-only states, but merge server states if newer
+    const userMap = new Map<string, User>();
+
+    // Seed with server users
+    serverUsersList.forEach((u: any) => {
+      userMap.set(u.id, {
+        id: u.id,
+        name: u.name,
+        email: u.email || "",
+        mobile: u.mobile || "",
+        hobbies: u.hobbies || "General Productivity",
+        password: u.password || "",
+        createdAt: u.createdAt || new Date().toISOString(),
+        friendsList: u.friendsList || [],
+        sentRequests: u.sentRequests || [],
+        receivedRequests: u.receivedRequests || [],
+        isOnline: u.isOnline ?? false,
+      });
+    });
+
+    // Merge with local users from ledger_users
+    localUsers.forEach((u: any) => {
+      const existing = userMap.get(u.id);
+      userMap.set(u.id, {
+        id: u.id,
+        name: u.name,
+        email: u.email || existing?.email || "",
+        mobile: u.mobile || existing?.mobile || "",
+        hobbies: u.hobbies || existing?.hobbies || "General Productivity",
+        password: u.password || existing?.password || "",
+        createdAt: u.createdAt || existing?.createdAt || new Date().toISOString(),
+        friendsList: u.friendsList || existing?.friendsList || [],
+        sentRequests: u.sentRequests || existing?.sentRequests || [],
+        receivedRequests: u.receivedRequests || existing?.receivedRequests || [],
+        isOnline: u.isOnline ?? existing?.isOnline ?? false,
+      });
+    });
+
+    const mergedUsers = Array.from(userMap.values());
+    setAllUsers(mergedUsers);
+
+    // Keep currentUser synchronized in case friend list was updated on server or local
+    const freshSelf = mergedUsers.find(u => u.id === currentUser.id);
+    if (freshSelf) {
+      const mergedSelf = {
+        ...currentUser,
+        friendsList: freshSelf.friendsList || [],
+        sentRequests: freshSelf.sentRequests || [],
+        receivedRequests: freshSelf.receivedRequests || [],
+        isOnline: freshSelf.isOnline ?? true
+      };
+      if (JSON.stringify(mergedSelf) !== JSON.stringify(currentUser)) {
+        localStorage.setItem("ledger_current_user", JSON.stringify(mergedSelf));
+        onUpdateCurrentUser(mergedSelf);
+
+        // Also update this user in our persistent local accounts backup list (ledger_users)
+        const updatedCached = localUsers.map((u: any) => u.id === currentUser.id ? mergedSelf : u);
+        localStorage.setItem("ledger_users", JSON.stringify(updatedCached));
+      }
     }
 
     const storedChats: ChatMessage[] = JSON.parse(localStorage.getItem("ledger_chats") || "[]");
@@ -83,65 +140,223 @@ export default function SocialHub({
     loadNetworkData();
     // Poll every 2 seconds to simulate high-fidelity multi-user updates
     const interval = setInterval(loadNetworkData, 2000);
-    return () => clearInterval(interval);
+
+    // Listen to localStorage changes across other tabs for live updates!
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "ledger_chats" || e.key === "ledger_users" || e.key === "ledger_current_user") {
+        loadNetworkData();
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("storage", handleStorageChange);
+    };
   }, [currentUser.id]);
 
   // Handle Friend Request: Send
   const sendFriendRequest = async (targetUserId: string) => {
+    // 1. Instantly update local states
+    const localUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    
+    // Update sender (current user)
+    const senderIdx = localUsers.findIndex(u => u.id === currentUser.id);
+    if (senderIdx !== -1) {
+      const sender = localUsers[senderIdx];
+      const sent = sender.sentRequests || [];
+      if (!sent.includes(targetUserId)) {
+        sender.sentRequests = [...sent, targetUserId];
+      }
+    }
+    
+    // Update receiver
+    const receiverIdx = localUsers.findIndex(u => u.id === targetUserId);
+    if (receiverIdx !== -1) {
+      const receiver = localUsers[receiverIdx];
+      const received = receiver.receivedRequests || [];
+      if (!received.includes(currentUser.id)) {
+        receiver.receivedRequests = [...received, currentUser.id];
+      }
+    }
+    localStorage.setItem("ledger_users", JSON.stringify(localUsers));
+    
+    const updatedUser = {
+      ...currentUser,
+      sentRequests: [...(currentUser.sentRequests || []).filter(id => id !== targetUserId), targetUserId]
+    };
+    localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
+    onUpdateCurrentUser(updatedUser);
+
+    // 2. Try server request
     try {
       await fetch("/api/auth/friend-request/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ senderId: currentUser.id, receiverId: targetUserId }),
       });
-      loadNetworkData();
     } catch (e) {
-      console.error("Failed to send friend request:", e);
+      console.error("Failed to send friend request to server:", e);
     }
+    
+    loadNetworkData();
   };
 
   // Handle Multiple Friend Requests: Send
   const sendMultipleFriendRequests = async (targetUserIds: string[]) => {
     if (targetUserIds.length === 0) return;
+    
+    // 1. Instantly update local states
+    const localUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    
+    // Update sender
+    const senderIdx = localUsers.findIndex(u => u.id === currentUser.id);
+    if (senderIdx !== -1) {
+      const sender = localUsers[senderIdx];
+      const sent = sender.sentRequests || [];
+      targetUserIds.forEach(id => {
+        if (!sent.includes(id)) {
+          sent.push(id);
+        }
+      });
+      sender.sentRequests = sent;
+    }
+    
+    // Update receivers
+    targetUserIds.forEach(targetUserId => {
+      const receiverIdx = localUsers.findIndex(u => u.id === targetUserId);
+      if (receiverIdx !== -1) {
+        const receiver = localUsers[receiverIdx];
+        const received = receiver.receivedRequests || [];
+        if (!received.includes(currentUser.id)) {
+          receiver.receivedRequests = [...received, currentUser.id];
+        }
+      }
+    });
+    
+    localStorage.setItem("ledger_users", JSON.stringify(localUsers));
+    
+    const currentSent = currentUser.sentRequests || [];
+    const newSent = [...currentSent];
+    targetUserIds.forEach(id => {
+      if (!newSent.includes(id)) {
+        newSent.push(id);
+      }
+    });
+    
+    const updatedUser = {
+      ...currentUser,
+      sentRequests: newSent
+    };
+    localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
+    onUpdateCurrentUser(updatedUser);
+    setSelectedDiscoverIds([]);
+
+    // 2. Try server update
     try {
       await fetch("/api/auth/friend-request/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ senderId: currentUser.id, receiverIds: targetUserIds }),
       });
-      setSelectedDiscoverIds([]);
-      loadNetworkData();
     } catch (e) {
-      console.error("Failed to send multiple friend requests:", e);
+      console.error("Failed to send multiple friend requests to server:", e);
     }
+    
+    loadNetworkData();
   };
 
   // Handle Friend Request: Accept
   const acceptFriendRequest = async (requesterId: string) => {
+    // 1. Instantly update local states
+    const localUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    
+    // Update user (current user)
+    const userIdx = localUsers.findIndex(u => u.id === currentUser.id);
+    if (userIdx !== -1) {
+      const user = localUsers[userIdx];
+      user.receivedRequests = (user.receivedRequests || []).filter(id => id !== requesterId);
+      const friendsList = user.friendsList || [];
+      if (!friendsList.includes(requesterId)) {
+        user.friendsList = [...friendsList, requesterId];
+      }
+    }
+    
+    // Update requester
+    const requesterIdx = localUsers.findIndex(u => u.id === requesterId);
+    if (requesterIdx !== -1) {
+      const requester = localUsers[requesterIdx];
+      requester.sentRequests = (requester.sentRequests || []).filter(id => id !== currentUser.id);
+      const friendsList = requester.friendsList || [];
+      if (!friendsList.includes(currentUser.id)) {
+        requester.friendsList = [...friendsList, currentUser.id];
+      }
+    }
+    
+    localStorage.setItem("ledger_users", JSON.stringify(localUsers));
+    
+    const updatedUser = {
+      ...currentUser,
+      receivedRequests: (currentUser.receivedRequests || []).filter(id => id !== requesterId),
+      friendsList: [...(currentUser.friendsList || []).filter(id => id !== requesterId), requesterId]
+    };
+    localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
+    onUpdateCurrentUser(updatedUser);
+
+    // 2. Try server update
     try {
       await fetch("/api/auth/friend-request/accept", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: currentUser.id, requesterId }),
       });
-      loadNetworkData();
     } catch (e) {
-      console.error("Failed to accept friend request:", e);
+      console.error("Failed to accept friend request on server:", e);
     }
+    
+    loadNetworkData();
   };
 
   // Handle Friend Request: Reject / Cancel
   const rejectFriendRequest = async (requesterId: string) => {
+    // 1. Instantly update local states
+    const localUsers: User[] = JSON.parse(localStorage.getItem("ledger_users") || "[]");
+    
+    // Update user (current user)
+    const userIdx = localUsers.findIndex(u => u.id === currentUser.id);
+    if (userIdx !== -1) {
+      const user = localUsers[userIdx];
+      user.receivedRequests = (user.receivedRequests || []).filter(id => id !== requesterId);
+    }
+    
+    // Update requester
+    const requesterIdx = localUsers.findIndex(u => u.id === requesterId);
+    if (requesterIdx !== -1) {
+      const requester = localUsers[requesterIdx];
+      requester.sentRequests = (requester.sentRequests || []).filter(id => id !== currentUser.id);
+    }
+    
+    localStorage.setItem("ledger_users", JSON.stringify(localUsers));
+    
+    const updatedUser = {
+      ...currentUser,
+      receivedRequests: (currentUser.receivedRequests || []).filter(id => id !== requesterId)
+    };
+    localStorage.setItem("ledger_current_user", JSON.stringify(updatedUser));
+    onUpdateCurrentUser(updatedUser);
+
+    // 2. Try server update
     try {
       await fetch("/api/auth/friend-request/reject", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: currentUser.id, requesterId }),
       });
-      loadNetworkData();
     } catch (e) {
-      console.error("Failed to reject friend request:", e);
+      console.error("Failed to reject friend request on server:", e);
     }
+    
+    loadNetworkData();
   };
 
   // Send Chat message

@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>MST - Active Ledger</title>
     
+    <!-- PWA Web App Manifest Link -->
+    <link rel="manifest" href="/manifest.json" />
+    
     <!-- Android / Mobile Chrome optimization -->
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -23,6 +26,18 @@
   <body class="bg-[#0a0a0a] text-[#f2f2f2] antialiased select-none touch-pan-y">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- Register PWA Service Worker -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/service-worker.js")
+            .then((reg) => console.log("[PWA] Service Worker registered successfully:", reg.scope))
+            .catch((err) => console.error("[PWA] Service Worker registration failed:", err));
+        });
+      }
+    </script>
   </body>
 </html>
 

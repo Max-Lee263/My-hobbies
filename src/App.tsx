@@ -23,12 +23,16 @@ import {
   Monitor,
   X,
   Edit2,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  Palette,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 import { Habit, HabitLog, User } from "./types";
 import {
-  DEFAULT_HABITS,
   MONTH_NAMES,
   getDaysInMonth,
   formatDateKey,
@@ -59,29 +63,94 @@ export default function App() {
   });
 
   const [sessionKicked, setSessionKicked] = useState(false);
+  const [kickReason, setKickReason] = useState<"concurrency" | "inactivity" | "">("");
+  const [isVerifyingSession, setIsVerifyingSession] = useState(true);
+
+  // --- TACTICAL THEME STATE ---
+  const [activeTheme, setActiveTheme] = useState<string>(() => {
+    return localStorage.getItem("themeservice") || "orange";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", activeTheme);
+    localStorage.setItem("themeservice", activeTheme);
+  }, [activeTheme]);
+
+  // --- INITIAL SESSION VERIFICATION ---
+  useEffect(() => {
+    const checkMe = async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.user) {
+            setCurrentUser(data.user);
+            localStorage.setItem("ledger_current_user", JSON.stringify(data.user));
+          } else {
+            setCurrentUser(null);
+            localStorage.removeItem("ledger_current_user");
+          }
+        } else {
+          setCurrentUser(null);
+          localStorage.removeItem("ledger_current_user");
+        }
+      } catch (e) {
+        console.error("Session verification failed:", e);
+      } finally {
+        setIsVerifyingSession(false);
+      }
+    };
+    checkMe();
+  }, []);
+
+  // --- CLIENT-SIDE INACTIVITY TRACKER (30 MINUTES) ---
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let lastInteractionTime = Date.now();
+
+    const resetInactivity = () => {
+      lastInteractionTime = Date.now();
+    };
+
+    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    events.forEach(event => window.addEventListener(event, resetInactivity, { passive: true }));
+
+    const checkInterval = setInterval(() => {
+      const elapsed = Date.now() - lastInteractionTime;
+      const timeoutMs = 30 * 60 * 1000; // 30 minutes in production
+
+      if (elapsed >= timeoutMs) {
+        console.log("Inactivity detected. Logging out...");
+        handleLogout();
+        setSessionKicked(true);
+        setKickReason("inactivity");
+      }
+    }, 10000); // Check every 10s
+
+    return () => {
+      events.forEach(event => window.removeEventListener(event, resetInactivity));
+      clearInterval(checkInterval);
+    };
+  }, [currentUser]);
 
   // --- SESSION CONCURRENCY POLLING HOOK ---
   useEffect(() => {
     if (!currentUser) return;
 
     const interval = setInterval(async () => {
-      const token = localStorage.getItem("ledger_session_token");
-      if (!token) return;
-
       try {
-        const response = await fetch(
-          `/api/auth/check-session?userId=${encodeURIComponent(currentUser.id)}&sessionToken=${encodeURIComponent(token)}`
-        );
+        const response = await fetch("/api/auth/check-session");
         if (response.ok) {
           const data = await response.json();
           if (data.valid === false) {
             // Clear local storage session
             localStorage.removeItem("ledger_current_user");
-            localStorage.removeItem("ledger_session_token");
             
             // Log out user & show modal
             setCurrentUser(null);
             setSessionKicked(true);
+            setKickReason(data.reason === "session_expired" ? "inactivity" : "concurrency");
             clearInterval(interval);
           }
         }
@@ -112,6 +181,7 @@ export default function App() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isHobbiesModalOpen, setIsHobbiesModalOpen] = useState(false);
   const [isTimeTableModalOpen, setIsTimeTableModalOpen] = useState(false);
+  const [isTimetableCollapsed, setIsTimetableCollapsed] = useState(false);
   const [habitToEdit, setHabitToEdit] = useState<Habit | null>(null);
   
   // Navigation / Workspace tab state
@@ -354,12 +424,12 @@ export default function App() {
       try {
         loadedHabits = JSON.parse(storedHabits);
       } catch (e) {
-        loadedHabits = DEFAULT_HABITS;
+        loadedHabits = [];
       }
     } else {
-      // First time for this user: prefill with DEFAULT_HABITS
-      loadedHabits = DEFAULT_HABITS;
-      localStorage.setItem(habitsKey, JSON.stringify(DEFAULT_HABITS));
+      // First time for this user: start with an entirely blank timetable and empty habit list
+      loadedHabits = [];
+      localStorage.setItem(habitsKey, JSON.stringify([]));
     }
     setHabits(loadedHabits);
 
@@ -377,8 +447,14 @@ export default function App() {
   }, [currentUser]);
 
   // Logout Handler
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (e) {
+      console.error("Backend logout failed:", e);
+    }
     localStorage.removeItem("ledger_current_user");
+    localStorage.removeItem("ledger_session_token");
     setCurrentUser(null);
   };
 
@@ -387,6 +463,30 @@ export default function App() {
   const days = useMemo(() => {
     return getDaysInMonth(currentYear, currentMonth);
   }, [currentYear, currentMonth]);
+
+  // --- GAMIFICATION PROGRESS CALCULATIONS ---
+  const gamificationStats = useMemo(() => {
+    let totalCompletions = 0;
+    Object.keys(logs).forEach((dateKey) => {
+      const completedIds = logs[dateKey] || [];
+      totalCompletions += completedIds.filter((id) => habits.some((h) => h.id === id)).length;
+    });
+    const totalXP = totalCompletions * 10;
+    
+    const level = Math.floor(totalXP / 100) + 1;
+    const xpInCurrentLevel = totalXP % 100;
+    const xpNeededForNextLevel = 100;
+    const progressPercent = (xpInCurrentLevel / xpNeededForNextLevel) * 100;
+    
+    return {
+      totalCompletions,
+      totalXP,
+      level,
+      xpInCurrentLevel,
+      xpNeededForNextLevel,
+      progressPercent,
+    };
+  }, [logs, habits]);
 
   // --- MONTHLY METRIC CALCULATIONS ---
   const stats = useMemo(() => {
@@ -530,13 +630,13 @@ export default function App() {
   };
 
   // Save new or edited habit
-  const handleSaveHabit = (name: string, emoji: string, category: string) => {
+  const handleSaveHabit = (name: string, emoji: string, category: string, subjectTag?: string) => {
     if (!currentUser) return;
     if (habitToEdit) {
       // Edit mode
       setHabits((prev) => {
         const updated = prev.map((h) =>
-          h.id === habitToEdit.id ? { ...h, name, emoji, category } : h
+          h.id === habitToEdit.id ? { ...h, name, emoji, category, subjectTag } : h
         );
         const habitsKey = `habit_tracker_items_${currentUser.id}`;
         localStorage.setItem(habitsKey, JSON.stringify(updated));
@@ -549,6 +649,7 @@ export default function App() {
         name,
         emoji,
         category,
+        subjectTag,
         createdAt: new Date().toISOString(),
       };
       setHabits((prev) => {
@@ -763,6 +864,17 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  if (isVerifyingSession) {
+    return (
+      <div className="min-h-screen bg-[#070707] flex items-center justify-center font-mono">
+        <div className="space-y-4 text-center">
+          <div className="w-12 h-12 border-2 border-t-red-500 border-zinc-800 rounded-full animate-spin mx-auto"></div>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-widest animate-pulse">Initializing Security Session...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     return (
       <div className="relative min-h-screen">
@@ -788,15 +900,17 @@ export default function App() {
                   
                   <div className="space-y-2">
                     <h2 className="text-xl font-mono font-black text-red-500 uppercase tracking-wider">
-                      Session Terminated
+                      {kickReason === "inactivity" ? "Session Expired" : "Session Terminated"}
                     </h2>
                     <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-                      Double-Device Login Detected
+                      {kickReason === "inactivity" ? "Inactivity Timeout (30 min)" : "Double-Device Login Detected"}
                     </p>
                   </div>
                   
                   <p className="text-xs text-zinc-400 font-sans leading-relaxed">
-                    This account was just logged in from another device or browser. To maintain record integrity and security, your previous session here has been automatically terminated.
+                    {kickReason === "inactivity"
+                      ? "Your session has expired due to 30 minutes of inactivity. Please log in again to continue managing your routines securely."
+                      : "This account was just logged in from another device or browser. To maintain record integrity and security, your previous session here has been automatically terminated."}
                   </p>
                   
                   <div className="pt-4">
@@ -892,18 +1006,42 @@ export default function App() {
             <div className="w-12 h-12 bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-orange-500 shrink-0">
               <School className="w-6 h-6 stroke-[2px]" />
             </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <span className="text-[9px] font-mono font-bold text-orange-500 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 uppercase tracking-wider">
                   ACTIVE LEDGER ROOM
                 </span>
                 <span className="text-[9px] font-mono text-zinc-500">
                   ID: #{currentUser.id.slice(-6)}
                 </span>
+                <span className="text-[9px] font-mono font-black text-black bg-orange-500 px-2 py-0.5 uppercase tracking-wider flex items-center gap-1 shadow-[0_0_8px_rgba(249,115,22,0.3)]">
+                  ⭐ LVL {gamificationStats.level}
+                </span>
+                <span className="text-[9px] font-mono font-bold text-orange-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 uppercase tracking-wider">
+                  {gamificationStats.totalXP} XP
+                </span>
               </div>
-              <h2 className="text-xl font-black text-white uppercase tracking-tight font-sans">
-                {currentUser.name}
-              </h2>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <h2 className="text-xl font-black text-white uppercase tracking-tight font-sans">
+                  {currentUser.name}
+                </h2>
+                
+                {/* Focus Level Progress Bar */}
+                <div className="bg-zinc-900/50 border border-zinc-850 p-1.5 px-2.5 flex items-center gap-2.5 max-w-[280px]">
+                  <div className="flex flex-col">
+                    <div className="flex justify-between items-center text-[8px] font-mono font-bold uppercase gap-8">
+                      <span className="text-zinc-500">LEVEL PROGRESS</span>
+                      <span className="text-orange-400">{gamificationStats.xpInCurrentLevel}/100 XP</span>
+                    </div>
+                    <div className="w-[140px] h-1.5 bg-zinc-950 border border-zinc-900 overflow-hidden mt-0.5">
+                      <div 
+                        className="h-full bg-orange-500 transition-all duration-500 ease-out shadow-[0_0_8px_rgba(249,115,22,0.5)]" 
+                        style={{ width: `${gamificationStats.progressPercent}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
               {/* Interactive focus hobbies list & selector */}
               <div className="pt-1.5 space-y-1.5">
                 <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 font-mono uppercase tracking-wider">
@@ -987,6 +1125,22 @@ export default function App() {
                   <span>+91 {currentUser.mobile}</span>
                 </div>
               )}
+            </div>
+
+            {/* Tactical OP MOOD Selection Dropdown */}
+            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 focus-within:border-orange-500 px-2.5 py-1.5 transition-all select-none">
+              <Palette className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+              <span className="text-[10px] font-mono font-bold text-zinc-500 uppercase select-none">OP MOOD:</span>
+              <select
+                value={activeTheme}
+                onChange={(e) => setActiveTheme(e.target.value)}
+                className="bg-transparent text-zinc-200 border-none outline-hidden focus:ring-0 text-[10px] font-mono font-black uppercase tracking-wider cursor-pointer"
+              >
+                <option value="orange" className="bg-zinc-950 text-orange-500 font-bold uppercase">Orange</option>
+                <option value="stealth" className="bg-zinc-950 text-zinc-350 font-bold uppercase">Stealth</option>
+                <option value="crimson" className="bg-zinc-950 text-red-500 font-bold uppercase">Crimson</option>
+                <option value="phantom" className="bg-zinc-950 text-emerald-500 font-bold uppercase">Phantom</option>
+              </select>
             </div>
 
             <button
@@ -1291,6 +1445,128 @@ export default function App() {
                   </p>
                 </div>
 
+                {/* --- TODAY'S STUDY TIMETABLE COLLAPSIBLE SECTION --- */}
+                {(() => {
+                  const timetableHabits = habits.filter(h => h.category === "Study Timetable");
+                  const todayDayObj = days.find(d => d.isToday);
+                  const todayDateKey = todayDayObj?.dateKey || new Date().toISOString().split("T")[0];
+
+                  return (
+                    <div className="mb-6 bg-zinc-950 border border-zinc-850 relative">
+                      {/* Title Bar with top orange line and chevron */}
+                      <div className="absolute top-0 left-0 w-full h-[2px] bg-orange-500"></div>
+                      <div 
+                        onClick={() => setIsTimetableCollapsed(!isTimetableCollapsed)}
+                        className="p-4 flex items-center justify-between cursor-pointer select-none hover:bg-zinc-900/20 transition-all"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Clock className="w-4 h-4 text-orange-500 animate-pulse" />
+                          <h3 className="text-xs font-mono font-black text-white uppercase tracking-widest">
+                            TODAY'S STUDY TIMETABLE
+                          </h3>
+                          <span className="text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 px-2 py-0.5">
+                            {timetableHabits.length} SCHEDULED
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono text-zinc-500 uppercase">
+                            {isTimetableCollapsed ? "Click to Expand" : "Click to Collapse"}
+                          </span>
+                          {isTimetableCollapsed ? (
+                            <ChevronDown className="w-4 h-4 text-zinc-400" />
+                          ) : (
+                            <ChevronUp className="w-4 h-4 text-zinc-400" />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Collapsible Content */}
+                      <AnimatePresence initial={false}>
+                        {!isTimetableCollapsed && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden border-t border-zinc-900"
+                          >
+                            <div className="p-4">
+                              {timetableHabits.length === 0 ? (
+                                <div className="py-8 text-center border border-dashed border-zinc-900 flex flex-col items-center justify-center gap-3">
+                                  <p className="text-xs font-mono text-zinc-500 uppercase">
+                                    No scheduled study sessions configured for today.
+                                  </p>
+                                  <button
+                                    onClick={() => setIsTimeTableModalOpen(true)}
+                                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-black text-xs font-black uppercase tracking-widest transition-all rounded-none shadow-[0_0_12px_rgba(249,115,22,0.2)] hover:shadow-[0_0_20px_rgba(249,115,22,0.5)] cursor-pointer"
+                                  >
+                                    + Customize Study Timetable
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  {timetableHabits.map((item) => {
+                                    const isCompleted = logs[todayDateKey]?.includes(item.id) || false;
+                                    
+                                    // Parse name to subject and timeslot
+                                    const match = item.name.match(/^(.*?)\s*\(([^)]+)\)$/);
+                                    const subjectName = match ? match[1].trim() : item.name.trim();
+                                    const timeStr = match ? match[2].trim() : "Anytime";
+
+                                    return (
+                                      <div
+                                        key={item.id}
+                                        onClick={() => handleToggleHabit(item.id, todayDateKey)}
+                                        className={`p-3.5 border transition-all duration-200 cursor-pointer flex items-center justify-between group select-none relative overflow-hidden ${
+                                          isCompleted
+                                            ? "bg-orange-500/5 border-orange-500/80 hover:border-orange-500 shadow-[inset_0_0_12px_rgba(249,115,22,0.03)]"
+                                            : "bg-zinc-900/30 border-zinc-900 hover:border-zinc-800"
+                                        }`}
+                                      >
+                                        {/* Left Accent Bar */}
+                                        <div className={`absolute left-0 top-0 bottom-0 w-[2px] transition-colors ${
+                                          isCompleted ? "bg-orange-500" : "bg-zinc-800 group-hover:bg-zinc-650"
+                                        }`}></div>
+
+                                        <div className="flex items-center gap-3 pl-1.5 min-w-0">
+                                          <span className={`text-xl shrink-0 transition-transform group-hover:scale-115 duration-200 ${
+                                            isCompleted ? "opacity-100" : "opacity-50"
+                                          }`}>
+                                            {item.emoji}
+                                          </span>
+                                          <div className="min-w-0">
+                                            <p className={`text-xs font-black font-sans uppercase tracking-tight truncate ${
+                                              isCompleted ? "text-orange-500 line-through decoration-orange-500/50" : "text-zinc-200"
+                                            }`}>
+                                              {subjectName}
+                                            </p>
+                                            <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider block mt-0.5">
+                                              🕒 {timeStr}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {/* Checkbox Indicator */}
+                                        <div className={`w-5 h-5 shrink-0 border flex items-center justify-center transition-all ${
+                                          isCompleted
+                                            ? "bg-orange-500 border-orange-500 text-black shadow-[0_0_8px_rgba(249,115,22,0.3)]"
+                                            : "bg-zinc-950 border-zinc-800 group-hover:border-zinc-700 text-transparent"
+                                        }`}>
+                                          <Check className="w-3.5 h-3.5 stroke-[3px]" />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })()}
+
                 {/* --- CORE SPREADSHEET GRID COMPONENT --- */}
                 <HabitGrid
                   habits={filteredHabits}
@@ -1301,6 +1577,7 @@ export default function App() {
                   onDeleteHabit={handleDeleteHabit}
                   onMoveHabit={handleMoveHabit}
                   onQuickFillDay={handleQuickFillDay}
+                  onAddHabitClick={handleOpenAddModal}
                 />
 
                 {/* --- STATS BREAKDOWN LISTS --- */}
@@ -1311,6 +1588,7 @@ export default function App() {
                   currentMonth={currentMonth}
                   daysInMonthCount={days.length}
                   onEditHabit={handleOpenEditModal}
+                  onAddHabitClick={handleOpenAddModal}
                 />
               </motion.div>
             )}
@@ -1369,6 +1647,7 @@ export default function App() {
           onSave={handleSaveHabit}
           habitToEdit={habitToEdit}
           existingCategories={existingCategories}
+          availableSubjects={currentUser?.hobbies ? currentUser.hobbies.split(",").map(h => h.trim()).filter(Boolean) : []}
         />
 
         <PrintHabitsModal

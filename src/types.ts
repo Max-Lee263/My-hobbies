@@ -4,6 +4,7 @@ export interface Habit {
   emoji: string;
   createdAt: string; // ISO date string
   category?: string; // Tab/Category for organizing habits
+  subjectTag?: string; // Tag for connecting to "Focus Hobbies & Subjects"
 }
 
 export interface DayProgress {
@@ -34,6 +35,8 @@ export interface User {
   friendsList?: string[]; // IDs of accepted friends
   sentRequests?: string[]; // IDs of pending requests sent
   receivedRequests?: string[]; // IDs of pending requests received
+  isOnline?: boolean;
+  lastLoginAt?: string;
 }
 
 export interface ChatMessage {

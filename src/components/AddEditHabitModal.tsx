@@ -5,9 +5,10 @@ import { Habit } from "../types";
 interface AddEditHabitModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (name: string, emoji: string, category: string) => void;
+  onSave: (name: string, emoji: string, category: string, subjectTag?: string) => void;
   habitToEdit?: Habit | null;
   existingCategories: string[];
+  availableSubjects: string[];
 }
 
 const POPULAR_EMOJIS = [
@@ -22,17 +23,20 @@ export default function AddEditHabitModal({
   onSave,
   habitToEdit,
   existingCategories,
+  availableSubjects,
 }: AddEditHabitModalProps) {
   const [name, setName] = useState("");
   const [selectedEmoji, setSelectedEmoji] = useState("✨");
   const [category, setCategory] = useState("Routine");
   const [customCategory, setCustomCategory] = useState("");
   const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [subjectTag, setSubjectTag] = useState("");
 
   useEffect(() => {
     if (habitToEdit) {
       setName(habitToEdit.name);
       setSelectedEmoji(habitToEdit.emoji);
+      setSubjectTag(habitToEdit.subjectTag || "");
       const cat = habitToEdit.category || "Routine";
       if (existingCategories.includes(cat) && cat !== "All") {
         setCategory(cat);
@@ -45,6 +49,7 @@ export default function AddEditHabitModal({
     } else {
       setName("");
       setSelectedEmoji("⏰");
+      setSubjectTag("");
       const defaultCat = existingCategories.filter(c => c !== "All")[0] || "Routine";
       setCategory(defaultCat);
       setCustomCategory("");
@@ -62,9 +67,10 @@ export default function AddEditHabitModal({
       ? (customCategory.trim() || "Routine") 
       : category;
 
-    onSave(name.trim(), selectedEmoji, finalCategory);
+    onSave(name.trim(), selectedEmoji, finalCategory, subjectTag);
     setName("");
     setCustomCategory("");
+    setSubjectTag("");
     onClose();
   };
 
@@ -158,6 +164,49 @@ export default function AddEditHabitModal({
               <p className="text-[10px] font-mono text-orange-400/80">
                 ✨ A brand new tab will be generated for this habit on your board.
               </p>
+            )}
+          </div>
+
+          {/* Connect with Focus Subject / Hobby */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-mono font-bold text-orange-500 uppercase tracking-[0.2em] flex items-center gap-1.5">
+              <span>Connect with Focus Subject / Hobby</span>
+            </label>
+            {availableSubjects.length === 0 ? (
+              <p className="text-[10px] font-mono text-zinc-600 italic bg-zinc-900/50 p-2.5 border border-zinc-900">
+                No focus subjects configured. Add subjects at the top of your ledger first!
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setSubjectTag("")}
+                  className={`px-2.5 py-1.5 text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                    subjectTag === ""
+                      ? "bg-orange-500 text-black border-orange-500"
+                      : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white"
+                  }`}
+                >
+                  None
+                </button>
+                {availableSubjects.map((sub) => {
+                  const isSelected = subjectTag === sub;
+                  return (
+                    <button
+                      key={sub}
+                      type="button"
+                      onClick={() => setSubjectTag(sub)}
+                      className={`px-2.5 py-1.5 text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-orange-500 text-black border-orange-500"
+                          : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-orange-500/50 hover:text-orange-400"
+                      }`}
+                    >
+                      {sub}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
 

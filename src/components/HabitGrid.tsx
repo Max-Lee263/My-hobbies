@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Trash2, Edit2, ChevronUp, ChevronDown, CheckSquare, Square, Check, RefreshCw, X, Minimize2, Maximize2 } from "lucide-react";
+import { Trash2, Edit2, ChevronUp, ChevronDown, CheckSquare, Square, Check, RefreshCw, X, Minimize2, Maximize2, Plus } from "lucide-react";
 import { Habit, HabitLog } from "../types";
 import { CalendarDay, groupDaysIntoWeeks } from "../utils";
 
@@ -13,9 +13,11 @@ interface HabitGridProps {
   onDeleteHabit: (habitId: string) => void;
   onMoveHabit: (index: number, direction: "up" | "down") => void;
   onQuickFillDay: (dateKey: string, action: "all" | "none") => void;
+  onAddHabitClick?: () => void;
 }
 
-const renderFormattedHabitName = (name: string, isMinimized: boolean) => {
+const renderFormattedHabitName = (habit: Habit, isMinimized: boolean) => {
+  const { name, subjectTag } = habit;
   const match = name.match(/^(.*?)\s*\(([^)]+)\)$/);
   const subject = match ? match[1].trim() : name.trim();
   const timeSlot = match ? match[2].trim() : "";
@@ -44,6 +46,14 @@ const renderFormattedHabitName = (name: string, isMinimized: boolean) => {
           </span>
         )}
       </div>
+      
+      {/* Subject Tag Badge */}
+      {subjectTag && (
+        <span className="inline-flex mt-1 text-[8px] font-mono font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 max-w-max uppercase tracking-wider">
+          🏷️ {subjectTag}
+        </span>
+      )}
+
       {/* Time Slot under it in extremely micro mono */}
       {timeSlot && (
         <span className="text-[8.5px] font-mono font-black text-zinc-500 uppercase tracking-wide mt-1 block truncate">
@@ -63,6 +73,7 @@ export default function HabitGrid({
   onDeleteHabit,
   onMoveHabit,
   onQuickFillDay,
+  onAddHabitClick,
 }: HabitGridProps) {
   const weeks = groupDaysIntoWeeks(days);
   const [actionHabit, setActionHabit] = useState<Habit | null>(null);
@@ -273,32 +284,53 @@ export default function HabitGrid({
 
           <tbody>
             {/* Habit Rows */}
-            {habits.map((habit, hIdx) => (
-              <tr
-                key={habit.id}
-                className="hover:bg-zinc-900/30 border-b border-zinc-900 group transition-colors"
-              >
-                {/* Sticky Left Column: Habit details */}
-                <td 
-                  onClick={() => setActionHabit(habit)}
-                  className={`sticky left-0 bg-zinc-950 hover:bg-zinc-900 z-20 border-r border-zinc-800 transition-colors cursor-pointer select-none ${
-                    selectedWeekIdx !== "all"
-                      ? "w-[110px] min-w-[110px] max-w-[130px] p-2"
-                      : isMinimized
-                        ? "w-[120px] min-w-[120px] max-w-[140px] p-2"
-                        : "w-[155px] min-w-[155px] max-w-[180px] p-3"
-                  }`}
-                  title="Click to Manage, Edit, or Move this item"
-                >
-                  <div className="flex items-center justify-start gap-1.5 md:gap-2.5">
-                    <span className={`flex-shrink-0 transition-transform duration-200 ${
-                      isMinimized ? "text-sm" : "text-xl"
-                    }`}>{habit.emoji}</span>
-                    <div className="min-w-0 flex-1">
-                      {renderFormattedHabitName(habit.name, isMinimized)}
-                    </div>
+            {habits.length === 0 ? (
+              <tr>
+                <td colSpan={activeDays.length + 1} className="py-12 px-6 text-center bg-zinc-900/10">
+                  <div className="max-w-md mx-auto flex flex-col items-center justify-center gap-4">
+                    <p className="text-xs font-mono text-zinc-500 uppercase tracking-wider">
+                      No active habits logged on this ledger sheet.
+                    </p>
+                    {onAddHabitClick && (
+                      <button
+                        type="button"
+                        onClick={onAddHabitClick}
+                        className="px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-black text-xs font-black uppercase tracking-widest transition-all duration-300 shadow-[0_0_15px_rgba(249,115,22,0.35)] hover:shadow-[0_0_25px_rgba(249,115,22,0.6)] animate-pulse rounded-none flex items-center gap-2 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4 stroke-[3px]" />
+                        <span>+ Add Your First Habit</span>
+                      </button>
+                    )}
                   </div>
                 </td>
+              </tr>
+            ) : (
+              habits.map((habit, hIdx) => (
+                <tr
+                  key={habit.id}
+                  className="hover:bg-zinc-900/30 border-b border-zinc-900 group transition-colors"
+                >
+                  {/* Sticky Left Column: Habit details */}
+                  <td 
+                    onClick={() => setActionHabit(habit)}
+                    className={`sticky left-0 bg-zinc-950 hover:bg-zinc-900 z-20 border-r border-zinc-800 transition-colors cursor-pointer select-none ${
+                      selectedWeekIdx !== "all"
+                        ? "w-[110px] min-w-[110px] max-w-[130px] p-2"
+                        : isMinimized
+                          ? "w-[120px] min-w-[120px] max-w-[140px] p-2"
+                          : "w-[155px] min-w-[155px] max-w-[180px] p-3"
+                    }`}
+                    title="Click to Manage, Edit, or Move this item"
+                  >
+                    <div className="flex items-center justify-start gap-1.5 md:gap-2.5">
+                      <span className={`flex-shrink-0 transition-transform duration-200 ${
+                        isMinimized ? "text-sm" : "text-xl"
+                      }`}>{habit.emoji}</span>
+                      <div className="min-w-0 flex-1">
+                        {renderFormattedHabitName(habit, isMinimized)}
+                      </div>
+                    </div>
+                  </td>
 
                 {/* Day checkbox cells */}
                 {activeDays.map((day) => {
@@ -318,8 +350,8 @@ export default function HabitGrid({
                           type="button"
                           whileTap={{ scale: 0.9 }}
                           animate={{
-                            backgroundColor: isCompleted ? "#f97316" : "transparent",
-                            borderColor: isCompleted ? "#f97316" : "#3f3f46",
+                            backgroundColor: isCompleted ? "var(--accent-color-500, #f97316)" : "transparent",
+                            borderColor: isCompleted ? "var(--accent-color-500, #f97316)" : "#3f3f46",
                           }}
                           transition={{ duration: 0.1 }}
                           className={`border rounded-none flex items-center justify-center focus:outline-hidden relative cursor-pointer ${
@@ -343,7 +375,7 @@ export default function HabitGrid({
                   );
                 })}
               </tr>
-            ))}
+            )))}
 
             {/* Bottom Progress Row 1: Percentage (%) */}
             <tr className="bg-zinc-900 border-t border-zinc-800 font-black font-mono text-center">
