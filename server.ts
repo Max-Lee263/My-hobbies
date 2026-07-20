@@ -677,12 +677,12 @@ Analyze the user's intent, then output the updated focus/hobbies, and the recomm
     }
   });
 
-  // Check active device session concurrency & inactivity
+  // Check active device session concurrency & inactivity (session expiration completely disabled)
   app.get("/api/auth/check-session", (req, res) => {
     try {
       const { sessionToken, userId } = req.cookies;
       if (!userId || !sessionToken) {
-        return res.json({ valid: false, reason: "session_expired" });
+        return res.json({ valid: true });
       }
       
       const uId = String(userId);

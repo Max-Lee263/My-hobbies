@@ -84,6 +84,11 @@ export default function App() {
     localStorage.removeItem("kickReason");
     localStorage.removeItem("sessionKicked");
     localStorage.removeItem("inactivity_time");
+    localStorage.removeItem("last_active_time");
+    localStorage.removeItem("isExpired");
+    localStorage.removeItem("sessionExpired");
+    localStorage.removeItem("useInactivityTimeout");
+    localStorage.removeItem("isSessionExpired");
 
     const checkMe = async () => {
       try {
@@ -94,15 +99,30 @@ export default function App() {
             setCurrentUser(data.user);
             localStorage.setItem("ledger_current_user", JSON.stringify(data.user));
           } else {
-            setCurrentUser(null);
-            localStorage.removeItem("ledger_current_user");
+            // Keep local cached user if offline or server is syncing
+            const stored = localStorage.getItem("ledger_current_user");
+            if (stored) {
+              try {
+                setCurrentUser(JSON.parse(stored));
+              } catch (_) {}
+            }
           }
         } else {
-          setCurrentUser(null);
-          localStorage.removeItem("ledger_current_user");
+          const stored = localStorage.getItem("ledger_current_user");
+          if (stored) {
+            try {
+              setCurrentUser(JSON.parse(stored));
+            } catch (_) {}
+          }
         }
       } catch (e) {
         console.error("Session verification failed:", e);
+        const stored = localStorage.getItem("ledger_current_user");
+        if (stored) {
+          try {
+            setCurrentUser(JSON.parse(stored));
+          } catch (_) {}
+        }
       } finally {
         setIsVerifyingSession(false);
       }
@@ -113,33 +133,7 @@ export default function App() {
   // --- CLIENT-SIDE INACTIVITY TRACKER (DEACTIVATED PERMANENTLY) ---
 
 
-  // --- SESSION CONCURRENCY POLLING HOOK ---
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch("/api/auth/check-session");
-        if (response.ok) {
-          const data = await response.json();
-          if (data.valid === false && data.reason !== "session_expired") {
-            // Clear local storage session
-            localStorage.removeItem("ledger_current_user");
-            
-            // Log out user & show modal
-            setCurrentUser(null);
-            setSessionKicked(true);
-            setKickReason("concurrency");
-            clearInterval(interval);
-          }
-        }
-      } catch (e) {
-        console.error("Session concurrency check failed:", e);
-      }
-    }, 3500);
-
-    return () => clearInterval(interval);
-  }, [currentUser]);
+  // --- SESSION CONCURRENCY POLLING HOOK (DEACTIVATED PERMANENTLY) ---
 
   // --- STATE ---
   const [currentYear, setCurrentYear] = useState(() => {
@@ -858,65 +852,6 @@ export default function App() {
     return (
       <div className="relative min-h-screen">
         <AuthScreen onLogin={setCurrentUser} />
-        
-        {/* Session Kicked Modal Overlay */}
-        <AnimatePresence>
-          {sessionKicked && (
-            <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="max-w-md w-full bg-zinc-950 border-2 border-red-500 p-8 shadow-2xl relative"
-              >
-                {/* Visual Accent */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-red-500 animate-pulse"></div>
-                
-                <div className="text-center space-y-6 animate-fade-in">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-none bg-red-500/10 border border-red-500/30 text-red-500 text-3xl font-mono mb-2">
-                    ⚠️
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <h2 className="text-xl font-mono font-black text-red-500 uppercase tracking-wider">
-                      {kickReason === "inactivity" ? "Session Expired" : "Session Terminated"}
-                    </h2>
-                    <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-                      {kickReason === "inactivity" ? "Inactivity Timeout (30 min)" : "Double-Device Login Detected"}
-                    </p>
-                  </div>
-                  
-                  <p className="text-xs text-zinc-400 font-sans leading-relaxed">
-                    {kickReason === "inactivity"
-                      ? "Your session has expired due to 30 minutes of inactivity. Please log in again to continue managing your routines securely."
-                      : "This account was just logged in from another device or browser. To maintain record integrity and security, your previous session here has been automatically terminated."}
-                  </p>
-                  
-                  <div className="pt-4">
-                    <button
-                      onClick={() => {
-                        setSessionKicked(false);
-                        setKickReason("");
-                        // Load and restore current user immediately to land on dashboard
-                        const stored = localStorage.getItem("ledger_current_user");
-                        if (stored) {
-                          try {
-                            setCurrentUser(JSON.parse(stored));
-                          } catch (e) {
-                            console.error("Failed to restore session user:", e);
-                          }
-                        }
-                      }}
-                      className="w-full py-3 bg-red-500 hover:bg-red-600 text-black text-xs font-black uppercase tracking-widest transition-colors duration-200 cursor-pointer"
-                    >
-                      Acknowledge & Sign In
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
       </div>
     );
   }
