@@ -78,6 +78,13 @@ export default function App() {
 
   // --- INITIAL SESSION VERIFICATION ---
   useEffect(() => {
+    // Clear old session expiry flags or outdated activity timestamps on startup
+    localStorage.removeItem("session_expired");
+    localStorage.removeItem("lastActiveTime");
+    localStorage.removeItem("kickReason");
+    localStorage.removeItem("sessionKicked");
+    localStorage.removeItem("inactivity_time");
+
     const checkMe = async () => {
       try {
         const res = await fetch("/api/auth/session");
@@ -103,36 +110,8 @@ export default function App() {
     checkMe();
   }, []);
 
-  // --- CLIENT-SIDE INACTIVITY TRACKER (30 MINUTES) ---
-  useEffect(() => {
-    if (!currentUser) return;
+  // --- CLIENT-SIDE INACTIVITY TRACKER (DEACTIVATED PERMANENTLY) ---
 
-    let lastInteractionTime = Date.now();
-
-    const resetInactivity = () => {
-      lastInteractionTime = Date.now();
-    };
-
-    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"];
-    events.forEach(event => window.addEventListener(event, resetInactivity, { passive: true }));
-
-    const checkInterval = setInterval(() => {
-      const elapsed = Date.now() - lastInteractionTime;
-      const timeoutMs = 30 * 60 * 1000; // 30 minutes in production
-
-      if (elapsed >= timeoutMs) {
-        console.log("Inactivity detected. Logging out...");
-        handleLogout();
-        setSessionKicked(true);
-        setKickReason("inactivity");
-      }
-    }, 10000); // Check every 10s
-
-    return () => {
-      events.forEach(event => window.removeEventListener(event, resetInactivity));
-      clearInterval(checkInterval);
-    };
-  }, [currentUser]);
 
   // --- SESSION CONCURRENCY POLLING HOOK ---
   useEffect(() => {
@@ -143,14 +122,14 @@ export default function App() {
         const response = await fetch("/api/auth/check-session");
         if (response.ok) {
           const data = await response.json();
-          if (data.valid === false) {
+          if (data.valid === false && data.reason !== "session_expired") {
             // Clear local storage session
             localStorage.removeItem("ledger_current_user");
             
             // Log out user & show modal
             setCurrentUser(null);
             setSessionKicked(true);
-            setKickReason(data.reason === "session_expired" ? "inactivity" : "concurrency");
+            setKickReason("concurrency");
             clearInterval(interval);
           }
         }
@@ -915,7 +894,19 @@ export default function App() {
                   
                   <div className="pt-4">
                     <button
-                      onClick={() => setSessionKicked(false)}
+                      onClick={() => {
+                        setSessionKicked(false);
+                        setKickReason("");
+                        // Load and restore current user immediately to land on dashboard
+                        const stored = localStorage.getItem("ledger_current_user");
+                        if (stored) {
+                          try {
+                            setCurrentUser(JSON.parse(stored));
+                          } catch (e) {
+                            console.error("Failed to restore session user:", e);
+                          }
+                        }
+                      }}
                       className="w-full py-3 bg-red-500 hover:bg-red-600 text-black text-xs font-black uppercase tracking-widest transition-colors duration-200 cursor-pointer"
                     >
                       Acknowledge & Sign In

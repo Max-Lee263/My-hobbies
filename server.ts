@@ -471,11 +471,10 @@ Analyze the user's intent, then output the updated focus/hobbies, and the recomm
       }
 
       const activeToken = activeSessions[userId];
-      const lastSeen = lastActiveTime[userId] || 0;
       const now = Date.now();
 
-      // Enforce 30-minute inactivity limit on startup as well
-      if (!activeToken || activeToken !== sessionToken || (now - lastSeen > 30 * 60 * 1000)) {
+      // Do not enforce 30-minute inactivity limit anymore (permanently disabled)
+      if (!activeToken || activeToken !== sessionToken) {
         delete activeSessions[userId];
         delete lastActiveTime[userId];
         res.clearCookie("sessionToken");
@@ -698,15 +697,6 @@ Analyze the user's intent, then output the updated focus/hobbies, and the recomm
         activeSessions[uId] = sToken;
         lastActiveTime[uId] = now;
         return res.json({ valid: true });
-      }
-      
-      // 30 minutes Inactivity Timeout
-      if (now - lastSeen > 30 * 60 * 1000) {
-        delete activeSessions[uId];
-        delete lastActiveTime[uId];
-        res.clearCookie("sessionToken");
-        res.clearCookie("userId");
-        return res.json({ valid: false, reason: "session_expired" });
       }
       
       if (activeToken === sToken) {
