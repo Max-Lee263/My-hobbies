@@ -62,8 +62,6 @@ export default function App() {
     return null;
   });
 
-  const [sessionKicked, setSessionKicked] = useState(false);
-  const [kickReason, setKickReason] = useState<"concurrency" | "inactivity" | "">("");
   const [isVerifyingSession, setIsVerifyingSession] = useState(true);
 
   // --- TACTICAL THEME STATE ---
@@ -89,6 +87,8 @@ export default function App() {
     localStorage.removeItem("sessionExpired");
     localStorage.removeItem("useInactivityTimeout");
     localStorage.removeItem("isSessionExpired");
+    localStorage.removeItem("lastActiveTimestamp");
+    localStorage.removeItem("inactivity_timer");
 
     const checkMe = async () => {
       try {
